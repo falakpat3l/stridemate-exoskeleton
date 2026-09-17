@@ -1,0 +1,31 @@
+name: Compile firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # secrets.h is not in the repository; use the example values for CI.
+      - name: Create placeholder secrets.h
+        run: |
+          for d in firmware/*/; do cp "$d/secrets.example.h" "$d/secrets.h"; done
+
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: esp32:esp32:esp32
+          platforms: |
+            - name: esp32:esp32
+              source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+              version: 3.3.11
+          libraries: |
+            - name: Adafruit VL53L1X
+          sketch-paths: |
+            - firmware/right_leg
+            - firmware/left_leg
+          enable-warnings-report: true

@@ -1,0 +1,14 @@
+# Real Wi-Fi credentials and passwords - NEVER commit these
+secrets.h
+
+# Build output
+build/
+*.bin
+*.elf
+*.map
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
