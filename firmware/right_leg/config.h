@@ -71,6 +71,19 @@
 // is switched off until readings return.
 #define TOF_STALE_TIMEOUT_MS    500
 
+// SAFETY: a lost-then-re-acquired target must not look like a huge movement.
+// If no VALID reading arrived for longer than this, the distance filter is
+// re-seeded from the new reading instead of differenced against a stale one.
+#define TOF_RESEED_AFTER_MS     150
+
+// SAFETY: the sensor can be alive and ranging while seeing no target at all.
+// If nothing valid arrives for this long, the motor is switched off.
+#define TOF_NO_TARGET_TIMEOUT_MS 500
+
+// SAFETY: hard ceiling on one sample's velocity (mm per sample). Anything
+// larger is a sensor artefact, not a leg movement.
+#define MAX_VELOCITY_MM         30.0f
+
 // When the motor must reverse direction, ramp from zero instead of jumping
 // straight to full reverse power (protects gearbox, driver and the user).
 #define RESET_RAMP_ON_REVERSAL  true

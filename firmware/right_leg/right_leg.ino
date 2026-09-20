@@ -54,7 +54,9 @@ float velocity         = 0;   // mm per new sensor sample
 float pitch = 0, roll = 0;    // degrees, from accelerometer only
 
 bool     tofInitialised  = false;
-uint32_t tofLastSampleMs = 0;
+bool     tofSeeded       = false;   // filter holds a real measurement
+uint32_t tofLastSampleMs = 0;       // last reading of any kind (sensor alive)
+uint32_t tofLastValidMs  = 0;       // last reading with an actual target
 uint32_t tofLastInitTry  = 0;
 
 float smoothedPWM = 0;
@@ -119,8 +121,16 @@ static bool leftOnline(uint32_t now) {
   return last != 0 && (now - last) <= LEFT_OFFLINE_AFTER_MS;
 }
 
+// The sensor is alive and ranging (it may still be seeing nothing).
 static bool tofHealthy(uint32_t now) {
   return tofInitialised && (now - tofLastSampleMs) <= TOF_STALE_TIMEOUT_MS;
+}
+
+// The sensor is actually seeing a target. Assist requires this, not just
+// a living sensor - otherwise "sensor ok" can be true with no target for
+// minutes while the control law runs on a frozen distance.
+static bool tofHasTarget(uint32_t now) {
+  return tofSeeded && (now - tofLastValidMs) <= TOF_NO_TARGET_TIMEOUT_MS;
 }
 
 // =====================================================================
@@ -212,6 +222,7 @@ static void initTof() {
     return;
   }
   tofInitialised  = true;
+  tofSeeded       = false;          // force a re-seed on the first reading
   tofLastSampleMs = millis();
   Serial.println("[ToF] VL53L1X ready");
 }
@@ -225,13 +236,32 @@ static void readTof(uint32_t now) {
 
   int16_t raw = vl53.distance();                  // -1 = invalid / no target
   vl53.clearInterrupt();                          // arm next measurement
-  tofLastSampleMs = now;
+  tofLastSampleMs = now;                          // sensor is alive and ranging
 
-  if (raw > 0 && raw < TOF_VALID_MAX_MM) {
-    filteredDistance = DISTANCE_ALPHA * raw + (1.0f - DISTANCE_ALPHA) * filteredDistance;
+  if (raw <= 0 || raw >= TOF_VALID_MAX_MM) {
+    velocity = 0;                                 // no target -> never assist
+    return;                                       // tofLastValidMs left alone
   }
-  velocity = filteredDistance - previousDistance;
+
+  // SAFETY: after a gap in VALID readings (target lost to a trouser fold,
+  // sunlight, an out-of-range swing, or a sensor re-init), re-seed the filter.
+  // Differencing the new reading against a stale one produced a false velocity
+  // of a few hundred mm/sample, which saturated the assist curve and commanded
+  // near-full power - often in the opposite direction.
+  if (!tofSeeded || (now - tofLastValidMs) > TOF_RESEED_AFTER_MS) {
+    filteredDistance = raw;
+    previousDistance = raw;
+    velocity         = 0;
+    tofSeeded        = true;
+    tofLastValidMs   = now;
+    return;
+  }
+
+  filteredDistance = DISTANCE_ALPHA * raw + (1.0f - DISTANCE_ALPHA) * filteredDistance;
+  velocity = constrain(filteredDistance - previousDistance,
+                       -MAX_VELOCITY_MM, MAX_VELOCITY_MM);
   previousDistance = filteredDistance;
+  tofLastValidMs   = now;
 }
 
 static int16_t read16(TwoWire& bus) {
@@ -282,7 +312,7 @@ static void updateBattery() {
 //  Assist control
 // =====================================================================
 static void updateMotor(uint32_t now) {
-  bool allowed = motorEnabled && !otaInProgress && tofHealthy(now);
+  bool allowed = motorEnabled && !otaInProgress && tofHealthy(now) && tofHasTarget(now);
   if (STOP_MOTOR_IF_LEFT_OFFLINE && !leftOnline(now)) allowed = false;
 
   if (!allowed) {                                 // stop immediately, no ramp-down
