@@ -120,6 +120,36 @@
 #define BATTERY_FULL_V          4.20f  // (original) 100 %
 
 // ---------------------------------------------------------------------
+//  Motor thermal budget  (OPEN LOOP - read docs/safety.md before trusting it)
+// ---------------------------------------------------------------------
+// There is no current sensor and no thermistor on this build, so heating is
+// ESTIMATED from the duty cycle: thermalLoad integrates duty^2 and decays
+// with THERMAL_COOL_TAU_S. Past THERMAL_WARN_LOAD the assist ceiling is
+// folded back smoothly down to THERMAL_MIN_ASSIST_FRAC of its range. Folding
+// back rather than cutting out matters: losing assist abruptly mid-stride is
+// itself a hazard, and a smaller duty also reduces heating, so the loop
+// settles instead of oscillating.
+//
+// OFF BY DEFAULT. The constants below are PLACEHOLDERS, tuned in simulation so
+// that no realistic walking profile folds back and a motor held at full duty
+// folds back after about a minute. Nobody has measured the real motor, and an
+// untuned fold-back surprising you mid-walk is its own hazard - so the feature
+// ships dormant.
+//
+// The load estimate still runs and is still shown on the dashboard, which is
+// exactly what you need to calibrate: walk the device, watch what load your
+// real use produces, then set THERMAL_FULL_DUTY_S and THERMAL_COOL_TAU_S so
+// that normal use stays well under 0.80 and abuse does not. Turn this on only
+// once those numbers come from the bench rather than from simulation. Better
+// still, wire the BTS7960's R_IS/L_IS current-sense outputs to a spare ADC and
+// close the loop on real current instead of estimating from duty.
+#define THERMAL_PROTECTION       false
+#define THERMAL_FULL_DUTY_S      40.0f  // duty^2-seconds to reach load 1.0
+#define THERMAL_COOL_TAU_S       45.0f  // exponential cooling time constant
+#define THERMAL_WARN_LOAD        0.80f  // fold-back starts here
+#define THERMAL_MIN_ASSIST_FRAC  0.25f  // never fold below this share of range
+
+// ---------------------------------------------------------------------
 //  Fault handling
 // ---------------------------------------------------------------------
 // SAFETY: an I2C transaction that never completes stops the control loop,

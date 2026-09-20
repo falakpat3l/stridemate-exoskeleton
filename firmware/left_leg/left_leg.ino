@@ -61,6 +61,7 @@ float smoothedPWM = 0;
 int   targetPWM   = 0;
 int   lastDirection = 0;      // +1, -1 or 0
 bool  bridgeEnabled = false;  // H-bridge enable pins (REN/LEN) state
+float thermalLoad   = 0;      // open-loop heat estimate, 0..1.5 (1.0 = budget)
 
 int batteryPercent = 0;
 
@@ -227,6 +228,24 @@ static void updateBattery() {
   batteryPercent = constrain((int)pct, 0, 100);
 }
 
+
+// =====================================================================
+//  Motor thermal budget (open loop - no current sensor on this build)
+// =====================================================================
+static void updateThermal(float duty) {
+  const float dt = CONTROL_PERIOD_MS / 1000.0f;
+  const float f  = duty / 255.0f;
+  thermalLoad += (f * f / THERMAL_FULL_DUTY_S - thermalLoad / THERMAL_COOL_TAU_S) * dt;
+  thermalLoad = constrain(thermalLoad, 0.0f, 1.5f);
+}
+
+// 1.0 = full assist available, falling smoothly to THERMAL_MIN_ASSIST_FRAC.
+static float thermalHeadroom() {
+  if (!THERMAL_PROTECTION || thermalLoad <= THERMAL_WARN_LOAD) return 1.0f;
+  float f = 1.0f - (thermalLoad - THERMAL_WARN_LOAD) / (1.0f - THERMAL_WARN_LOAD);
+  return constrain(f, THERMAL_MIN_ASSIST_FRAC, 1.0f);
+}
+
 // =====================================================================
 //  Assist control
 // =====================================================================
@@ -237,6 +256,7 @@ static void updateMotor(uint32_t now) {
   if (!allowed) {                                 // stop immediately, no ramp-down
     motorOff();
     lastDirection = 0;
+    updateThermal(0);                             // keep cooling while off
     return;
   }
 
@@ -254,12 +274,18 @@ static void updateMotor(uint32_t now) {
     targetPWM = 0;
   }
 
+  // THERMAL: cap the assist ceiling by the remaining heat budget.
+  int maxDuty = PWM_MIN_ASSIST +
+                (int)((assistStrength - PWM_MIN_ASSIST) * thermalHeadroom());
+  if (targetPWM > maxDuty) targetPWM = maxDuty;
+
   int direction = ((v > sens) ? 1 : (v < -sens) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
 
   if (RESET_RAMP_ON_REVERSAL && direction != 0 && lastDirection != 0 && direction != lastDirection) {
     smoothedPWM = 0;                              // brief stop, then ramp up again
     writeMotor(0, 0);
     lastDirection = direction;
+    updateThermal(0);
     return;
   }
   if (direction != 0) lastDirection = direction;
@@ -270,6 +296,8 @@ static void updateMotor(uint32_t now) {
   if (direction > 0)      writeMotor((int)smoothedPWM, 0);
   else if (direction < 0) writeMotor(0, (int)smoothedPWM);
   else                    writeMotor(0, 0);
+
+  updateThermal(direction != 0 ? smoothedPWM : 0);
 }
 
 // =====================================================================
@@ -278,14 +306,16 @@ static void updateMotor(uint32_t now) {
 static void handleData() {
   noteRequestFrom();
   uint32_t now = millis();
-  char json[400];
+  char json[448];
   snprintf(json, sizeof(json),
     "{\"distance\":%.2f,\"velocity\":%.2f,\"pwm\":%d,\"pitch\":%.2f,"
     "\"roll\":%.2f,\"battery\":%d,\"motorEnabled\":%s,\"assistStrength\":%d,"
-    "\"sensitivity\":%d,\"tofOk\":%s,\"rightLinkOk\":%s,\"uptimeMs\":%lu}",
+    "\"sensitivity\":%d,\"tofOk\":%s,\"tofTarget\":%s,\"thermal\":%.2f,"
+    "\"rightLinkOk\":%s,\"uptimeMs\":%lu}",
     filteredDistance, velocity, (int)smoothedPWM, pitch, roll, batteryPercent,
     motorEnabled ? "true" : "false", assistStrength, sensitivity,
-    tofHealthy(now) ? "true" : "false", rightLegHeard(now) ? "true" : "false",
+    tofHealthy(now) ? "true" : "false", tofHasTarget(now) ? "true" : "false",
+    thermalLoad, rightLegHeard(now) ? "true" : "false",
     (unsigned long)now);
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);

@@ -64,6 +64,7 @@ float smoothedPWM = 0;
 int   targetPWM   = 0;
 int   lastDirection = 0;      // +1, -1 or 0
 bool  bridgeEnabled = false;  // H-bridge enable pins (REN/LEN) state
+float thermalLoad   = 0;      // open-loop heat estimate, 0..1.5 (1.0 = budget)
 
 int batteryPercent = 0;
 
@@ -80,7 +81,7 @@ volatile uint32_t settingsVersion = 1;   // bumped on every change
 //  Left-leg data (written by the background task, read by the loop)
 // ---------------------------------------------------------------------
 struct LegTelemetry {
-  float distance = 0, velocity = 0, pwm = 0, pitch = 0, roll = 0, battery = 0;
+  float distance = 0, velocity = 0, pwm = 0, pitch = 0, roll = 0, battery = 0, thermal = 0;
 };
 LegTelemetry leftLeg;
 uint32_t     leftLastOkMs = 0;           // 0 = never received
@@ -166,6 +167,7 @@ static bool fetchLeftLeg() {
       jsonNumber(payload, "pitch",    t.pitch);
       jsonNumber(payload, "roll",     t.roll);
       jsonNumber(payload, "battery",  t.battery);
+      jsonNumber(payload, "thermal",  t.thermal);
       ok = true;
     } else {
       // Fallback for the original left-leg firmware: first value = distance.
@@ -323,6 +325,24 @@ static void updateBattery() {
   batteryPercent = constrain((int)pct, 0, 100);
 }
 
+
+// =====================================================================
+//  Motor thermal budget (open loop - no current sensor on this build)
+// =====================================================================
+static void updateThermal(float duty) {
+  const float dt = CONTROL_PERIOD_MS / 1000.0f;
+  const float f  = duty / 255.0f;
+  thermalLoad += (f * f / THERMAL_FULL_DUTY_S - thermalLoad / THERMAL_COOL_TAU_S) * dt;
+  thermalLoad = constrain(thermalLoad, 0.0f, 1.5f);
+}
+
+// 1.0 = full assist available, falling smoothly to THERMAL_MIN_ASSIST_FRAC.
+static float thermalHeadroom() {
+  if (!THERMAL_PROTECTION || thermalLoad <= THERMAL_WARN_LOAD) return 1.0f;
+  float f = 1.0f - (thermalLoad - THERMAL_WARN_LOAD) / (1.0f - THERMAL_WARN_LOAD);
+  return constrain(f, THERMAL_MIN_ASSIST_FRAC, 1.0f);
+}
+
 // =====================================================================
 //  Assist control
 // =====================================================================
@@ -333,6 +353,7 @@ static void updateMotor(uint32_t now) {
   if (!allowed) {                                 // stop immediately, no ramp-down
     motorOff();
     lastDirection = 0;
+    updateThermal(0);                             // keep cooling while off
     return;
   }
 
@@ -350,12 +371,18 @@ static void updateMotor(uint32_t now) {
     targetPWM = 0;
   }
 
+  // THERMAL: cap the assist ceiling by the remaining heat budget.
+  int maxDuty = PWM_MIN_ASSIST +
+                (int)((assistStrength - PWM_MIN_ASSIST) * thermalHeadroom());
+  if (targetPWM > maxDuty) targetPWM = maxDuty;
+
   int direction = ((v > sens) ? 1 : (v < -sens) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
 
   if (RESET_RAMP_ON_REVERSAL && direction != 0 && lastDirection != 0 && direction != lastDirection) {
     smoothedPWM = 0;                              // brief stop, then ramp up again
     writeMotor(0, 0);
     lastDirection = direction;
+    updateThermal(0);
     return;
   }
   if (direction != 0) lastDirection = direction;
@@ -366,6 +393,8 @@ static void updateMotor(uint32_t now) {
   if (direction > 0)      writeMotor((int)smoothedPWM, 0);
   else if (direction < 0) writeMotor(0, (int)smoothedPWM);
   else                    writeMotor(0, 0);
+
+  updateThermal(direction != 0 ? smoothedPWM : 0);
 }
 
 // =====================================================================
@@ -403,18 +432,20 @@ static void handleData() {
   l = leftLeg;
   portEXIT_CRITICAL(&leftMux);
 
-  char json[640];
+  char json[768];
   snprintf(json, sizeof(json),
     "{\"leftDistance\":%.2f,\"leftVelocity\":%.2f,\"leftPWM\":%.0f,"
-    "\"leftPitch\":%.2f,\"leftRoll\":%.2f,\"leftBattery\":%.0f,"
+    "\"leftPitch\":%.2f,\"leftRoll\":%.2f,\"leftBattery\":%.0f,\"leftThermal\":%.2f,"
     "\"rightDistance\":%.2f,\"rightVelocity\":%.2f,\"rightPWM\":%d,"
     "\"rightPitch\":%.2f,\"rightRoll\":%.2f,\"battery\":%d,"
     "\"motorEnabled\":%s,\"assistStrength\":%d,\"sensitivity\":%d,"
-    "\"leftOnline\":%s,\"tofOk\":%s,\"uptimeMs\":%lu}",
-    l.distance, l.velocity, l.pwm, l.pitch, l.roll, l.battery,
+    "\"leftOnline\":%s,\"tofOk\":%s,\"tofTarget\":%s,\"thermal\":%.2f,"
+    "\"uptimeMs\":%lu}",
+    l.distance, l.velocity, l.pwm, l.pitch, l.roll, l.battery, l.thermal,
     filteredDistance, velocity, (int)smoothedPWM, pitch, roll, batteryPercent,
     motorEnabled ? "true" : "false", (int)assistStrength, (int)sensitivity,
     leftOnline(now) ? "true" : "false", tofHealthy(now) ? "true" : "false",
+    tofHasTarget(now) ? "true" : "false", thermalLoad,
     (unsigned long)now);
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
