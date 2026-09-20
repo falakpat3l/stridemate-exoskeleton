@@ -89,6 +89,19 @@ Step-by-step guide: [docs/getting-started.md](docs/getting-started.md).
 
 - Mechanical CAD (Fusion 360 / STEP / STL): [falakpat3l/Stridemate_3D_IITH](https://github.com/falakpat3l/Stridemate_3D_IITH)
 
-## License
+## Licence
 
-Released under the [MIT License](LICENSE).
+Released under the **[PolyForm Noncommercial License 1.0.0](LICENSE.md)**: free for
+personal, research, educational, charitable and government use; commercial use
+needs a separate licence. For one, contact the copyright holder.
+
+This is not an OSI-approved open-source licence, because no OSI-approved licence
+restricts commercial use.
+
+> This repository was MIT-licensed until 20 September 2026. That grant cannot be
+> withdrawn, so release **v1.0.0 remains available under MIT** to anyone who wants
+> permissive terms. `original/` is B Dileep Kumar's work and his copyright.
+> [NOTICE.md](NOTICE.md) has the details and records what is still outstanding.
+
+Mechanical CAD lives in [Stridemate_3D_IITH](https://github.com/falakpat3l/Stridemate_3D_IITH)
+under CC BY-NC-SA 4.0.
