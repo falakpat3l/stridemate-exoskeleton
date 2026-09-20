@@ -16,7 +16,7 @@ StrideMate is a wearable lower-limb exoskeleton prototype that helps with walkin
 | **Actuation** | Windshield-wiper DC motors driven by BTS7960-style H-bridges |
 | **Structure** | CNC-machined aluminium thigh links, 3D-printed housings ([CAD files](https://github.com/falakpat3l/Stridemate_3D_IITH)) |
 | **Weight / cost** | Under 4 kg · prototype about ₹15–18k (target retail about ₹40,000) |
-| **Interface** | Phone web dashboard (no app, no internet needed): live data, assist strength, sensitivity, motor enable, STOP |
+| **Interface** | Phone web dashboard (no app, no internet needed): live data, motor load, assist strength, sensitivity, motor enable, STOP |
 | **Updates** | Password-protected over-the-air (OTA) firmware updates |
 
 ## How it works
@@ -39,7 +39,8 @@ flowchart LR
 ```
 
 1. The distance sensor measures a distance (in mm) that changes as the leg moves. The firmware filters it and works out how fast it's changing (the **velocity**).
-2. When the distance is between **50 and 450 mm** and the velocity is above the **sensitivity** threshold, the motor gets a command: `duty = 80 + 2.5 × |velocity|^1.5`. That value is capped at the **assist strength** and smoothed so the motor ramps up gently.
+2. When the distance is between **50 and 450 mm** and the velocity is above the **sensitivity** threshold, the motor gets a command: `duty = 80 + 2.5 × |velocity|^1.5`. That value is capped at the **assist strength**, capped again by the remaining thermal budget, and smoothed so the motor ramps up gently.
+   > Note: this curve reaches the 255 ceiling at about 17 mm per sensor sample, which is below normal walking speed — so in practice the device behaves closer to bang-bang than proportional. [how-it-works.md](docs/how-it-works.md) has the numbers.
 3. The sign of the velocity sets the motor direction.
 4. The right leg hosts the dashboard and passes your settings on to the left leg.
 
@@ -76,9 +77,11 @@ Step-by-step guide: [docs/getting-started.md](docs/getting-started.md).
 
 - ✅ Working prototype built (mechanics + electronics + dashboard).
 - ✅ Right-leg firmware cleaned up, secured and compile-checked (see [changes](docs/changes-from-original.md)).
+- ✅ Safety and security review applied: sensor-gap re-seeding, velocity clamp, H-bridge enables dropped on stop, I²C timeouts, control-loop watchdog, POST + same-origin on control endpoints.
 - ⚠️ **Left-leg firmware is reconstructed.** The original wasn't available, so it hasn't been tested on hardware yet.
 - ⚠️ The refactored right-leg firmware compiles but hasn't been re-tested on the physical device.
-- 🔜 Possible next steps: fuse gyro and accelerometer data for better tilt estimates, detect gait phases, log sessions.
+- ⚠️ Thermal fold-back ships **off** (`THERMAL_PROTECTION false`): the constants are simulated, not measured. The load estimate still runs and shows on the dashboard so you can calibrate it — see [docs/safety.md](docs/safety.md).
+- 🔜 Possible next steps: wire the BTS7960 current-sense pins for real stall detection, fuse gyro and accelerometer data for better tilt estimates, detect gait phases, log sessions.
 
 ## Team
 
