@@ -29,7 +29,8 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .off { background:#555; color:#fff; }
   .stop { background:#c62828; color:#fff; font-weight:bold; }
   .badge { display:inline-block; padding:3px 10px; border-radius:10px; font-size:13px; }
-  .ok { background:#2e7d32; } .bad { background:#c62828; }
+  .ok { background:#2e7d32; } .bad { background:#c62828; } .warn { background:#ef6c00; }
+  .info { background:#37474f; }
   canvas { background:#fff; border-radius:10px; width:100%; height:220px; }
   .legend span { margin:0 10px; font-size:14px; }
 </style>
@@ -68,10 +69,18 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 </div>
 
 <div class="card">
-  <h2>Battery</h2>
+  <h2>Battery <span class="badge info">logic supply</span></h2>
   <div class="grid">
     <span>Right leg</span><span class="value" id="battery">0%</span>
     <span>Left leg</span><span class="value" id="leftBattery">-</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Motor load <span class="badge ok" id="thermBadge">normal</span></h2>
+  <div class="grid">
+    <span>Right leg</span><span class="value" id="thermal">0%</span>
+    <span>Left leg</span><span class="value" id="leftThermal">-</span>
   </div>
 </div>
 
@@ -143,8 +152,14 @@ async function poll() {
     $('leftBattery').textContent = d.leftOnline ? d.leftBattery + '%' : '-';
     $('leftBadge').textContent = d.leftOnline ? 'online' : 'offline';
     $('leftBadge').className = 'badge ' + (d.leftOnline ? 'ok' : 'bad');
-    $('tofBadge').textContent = d.tofOk ? 'sensor ok' : 'SENSOR FAULT';
-    $('tofBadge').className = 'badge ' + (d.tofOk ? 'ok' : 'bad');
+    $('tofBadge').textContent = !d.tofOk ? 'SENSOR FAULT' : (d.tofTarget ? 'sensor ok' : 'no target');
+    $('tofBadge').className = 'badge ' + (!d.tofOk ? 'bad' : (d.tofTarget ? 'ok' : 'warn'));
+    const rt = Math.round(d.thermal * 100);
+    $('thermal').textContent = rt + '%';
+    $('leftThermal').textContent = d.leftOnline ? Math.round(d.leftThermal * 100) + '%' : '-';
+    const hot = d.thermal >= 0.8 || (d.leftOnline && d.leftThermal >= 0.8);
+    $('thermBadge').textContent = hot ? 'ASSIST REDUCED' : 'normal';
+    $('thermBadge').className = 'badge ' + (hot ? 'warn' : 'ok');
     setMotorUi(d.motorEnabled);
     if (!slidersInitialised) {
       $('assistSlider').value = d.assistStrength; $('assistVal').textContent = d.assistStrength;
@@ -165,7 +180,7 @@ function throttled(url) {
   return (value) => {
     latest = value;
     if (timer) return;
-    timer = setTimeout(() => { timer = null; fetch(url + latest); }, 150);
+    timer = setTimeout(() => { timer = null; fetch(url + latest, { method: 'POST' }); }, 150);
   };
 }
 const sendAssist = throttled('/setPWM?value=');
@@ -177,10 +192,10 @@ $('sensitivitySlider').addEventListener('input', function () {
   $('sensVal').textContent = this.value; sendSens(this.value);
 });
 async function stopAll() {
-  try { await fetch('/stop'); setMotorUi(false); } catch (e) {}
+  try { await fetch('/stop', { method: 'POST' }); setMotorUi(false); } catch (e) {}
 }
 async function setMotor(on) {
-  try { await fetch('/motor?on=' + (on ? 1 : 0)); setMotorUi(on); } catch (e) {}
+  try { await fetch('/motor?on=' + (on ? 1 : 0), { method: 'POST' }); setMotorUi(on); } catch (e) {}
 }
 
 drawChart();

@@ -1,5 +1,13 @@
 # Changes from the original prototype firmware
 
+> A later safety and security review made further changes on top of everything
+> below — sensor-gap re-seeding, a velocity clamp, H-bridge enables dropped on
+> stop, I²C timeouts, a control-loop watchdog, open-loop thermal fold-back, and
+> POST + same-origin on the control endpoints. Those are listed in
+> [CHANGELOG.md](../CHANGELOG.md) under 1.1.0 and explained in
+> [safety.md](safety.md) and [how-it-works.md](how-it-works.md). The control
+> algorithm and tuning values are still the original ones.
+
 The original right-leg code is preserved in [`original/right_leg_original`](../original/right_leg_original/right_leg_original.ino); only the Wi-Fi credentials were removed. This page lists every intentional change in [`firmware/right_leg`](../firmware/right_leg) so the original author, or anyone else, can review it.
 
 The **control algorithm and all tuning values are unchanged** (distance window, filters, PWM curve, slider ranges, pins, IPs).

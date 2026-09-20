@@ -71,13 +71,35 @@
 // is switched off until readings return.
 #define TOF_STALE_TIMEOUT_MS    500
 
+// SAFETY: a lost-then-re-acquired target must not look like a huge movement.
+// If no VALID reading arrived for longer than this, the distance filter is
+// re-seeded from the new reading instead of differenced against a stale one.
+#define TOF_RESEED_AFTER_MS     150
+
+// SAFETY: the sensor can be alive and ranging while seeing no target at all.
+// If nothing valid arrives for this long, the motor is switched off.
+#define TOF_NO_TARGET_TIMEOUT_MS 500
+
+// SAFETY: hard ceiling on one sample's velocity (mm per sample). Anything
+// larger is a sensor artefact, not a leg movement.
+#define MAX_VELOCITY_MM         30.0f
+
 // When the motor must reverse direction, ramp from zero instead of jumping
 // straight to full reverse power (protects gearbox, driver and the user).
 #define RESET_RAMP_ON_REVERSAL  true
 
-// Optional: VL53L1X timing budget in ms (15, 20, 33, 50, 100, 200, 500).
-// 0 = keep the library default, which is what the original prototype used.
-#define TOF_TIMING_BUDGET_MS    0
+// VL53L1X timing budget in ms (15, 20, 33, 50, 100, 200, 500).
+// This is a CONTROL GAIN, not just a sensor setting: velocity is measured in
+// mm per sample, so the sample period scales it directly. Leaving it at 0
+// ("library default") meant a library update could silently re-tune the
+// exoskeleton. 33 ms balances noise against latency; if you change it,
+// re-check Sensitivity on the bench.
+#define TOF_TIMING_BUDGET_MS    33
+// Direction of positive velocity for THIS leg. Set to -1 if the motor or the
+// linkage is mirrored and the leg is driven the wrong way. Verify with the
+// motor mechanically disconnected before trusting it.
+#define MOTOR_DIRECTION_SIGN    1
+
 
 // ---------------------------------------------------------------------
 //  Left-leg link
@@ -96,6 +118,49 @@
 #define BATTERY_DIVIDER_RATIO   2.0f   // (original)
 #define BATTERY_EMPTY_V         3.00f  // (original) 0 %
 #define BATTERY_FULL_V          4.20f  // (original) 100 %
+
+// ---------------------------------------------------------------------
+//  Motor thermal budget  (OPEN LOOP - read docs/safety.md before trusting it)
+// ---------------------------------------------------------------------
+// There is no current sensor and no thermistor on this build, so heating is
+// ESTIMATED from the duty cycle: thermalLoad integrates duty^2 and decays
+// with THERMAL_COOL_TAU_S. Past THERMAL_WARN_LOAD the assist ceiling is
+// folded back smoothly down to THERMAL_MIN_ASSIST_FRAC of its range. Folding
+// back rather than cutting out matters: losing assist abruptly mid-stride is
+// itself a hazard, and a smaller duty also reduces heating, so the loop
+// settles instead of oscillating.
+//
+// OFF BY DEFAULT. The constants below are PLACEHOLDERS, tuned in simulation so
+// that no realistic walking profile folds back and a motor held at full duty
+// folds back after about a minute. Nobody has measured the real motor, and an
+// untuned fold-back surprising you mid-walk is its own hazard - so the feature
+// ships dormant.
+//
+// The load estimate still runs and is still shown on the dashboard, which is
+// exactly what you need to calibrate: walk the device, watch what load your
+// real use produces, then set THERMAL_FULL_DUTY_S and THERMAL_COOL_TAU_S so
+// that normal use stays well under 0.80 and abuse does not. Turn this on only
+// once those numbers come from the bench rather than from simulation. Better
+// still, wire the BTS7960's R_IS/L_IS current-sense outputs to a spare ADC and
+// close the loop on real current instead of estimating from duty.
+#define THERMAL_PROTECTION       false
+#define THERMAL_FULL_DUTY_S      40.0f  // duty^2-seconds to reach load 1.0
+#define THERMAL_COOL_TAU_S       45.0f  // exponential cooling time constant
+#define THERMAL_WARN_LOAD        0.80f  // fold-back starts here
+#define THERMAL_MIN_ASSIST_FRAC  0.25f  // never fold below this share of range
+
+// ---------------------------------------------------------------------
+//  Fault handling
+// ---------------------------------------------------------------------
+// SAFETY: an I2C transaction that never completes stops the control loop,
+// while the LEDC peripheral keeps applying the last duty cycle in hardware.
+// Bound both buses so a wedged sensor cannot hold the motor on.
+#define MPU_I2C_TIMEOUT_MS      20
+#define TOF_I2C_TIMEOUT_MS      20
+
+// SAFETY: if loop() stops feeding the watchdog for this long the board
+// resets, which lands in the motor-disabled-at-boot state.
+#define CONTROL_WDT_TIMEOUT_MS  1000
 
 // ---------------------------------------------------------------------
 //  Serial debug output

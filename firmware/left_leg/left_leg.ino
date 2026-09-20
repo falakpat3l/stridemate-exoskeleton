@@ -24,6 +24,7 @@
 #include <ArduinoOTA.h>
 #include <Wire.h>
 #include <math.h>
+#include "esp_task_wdt.h"
 #include "Adafruit_VL53L1X.h"
 
 #include "config.h"
@@ -51,12 +52,16 @@ float velocity         = 0;   // mm per new sensor sample
 float pitch = 0, roll = 0;    // degrees, from accelerometer only
 
 bool     tofInitialised  = false;
-uint32_t tofLastSampleMs = 0;
+bool     tofSeeded       = false;   // filter holds a real measurement
+uint32_t tofLastSampleMs = 0;       // last reading of any kind (sensor alive)
+uint32_t tofLastValidMs  = 0;       // last reading with an actual target
 uint32_t tofLastInitTry  = 0;
 
 float smoothedPWM = 0;
 int   targetPWM   = 0;
 int   lastDirection = 0;      // +1, -1 or 0
+bool  bridgeEnabled = false;  // H-bridge enable pins (REN/LEN) state
+float thermalLoad   = 0;      // open-loop heat estimate, 0..1.5 (1.0 = budget)
 
 int batteryPercent = 0;
 
@@ -77,14 +82,34 @@ static void writeMotor(int forwardDuty, int reverseDuty) {
   ledcWrite(PIN_MOTOR_LPWM, reverseDuty);
 }
 
+// SAFETY: the H-bridge enable pins are the one path that removes drive
+// independently of the PWM peripheral. Previously they were driven HIGH once
+// in setup() and never touched, so every "off" in the firmware relied on the
+// LEDC channels continuing to output exactly 0%.
+static void setBridge(bool on) {
+  if (on == bridgeEnabled) return;
+  digitalWrite(PIN_MOTOR_REN, on ? HIGH : LOW);
+  digitalWrite(PIN_MOTOR_LEN, on ? HIGH : LOW);
+  bridgeEnabled = on;
+}
+
 static void motorOff() {
   writeMotor(0, 0);
+  setBridge(false);           // remove drive entirely; the motor coasts
   smoothedPWM = 0;
   targetPWM = 0;
 }
 
+// The sensor is alive and ranging (it may still be seeing nothing).
 static bool tofHealthy(uint32_t now) {
   return tofInitialised && (now - tofLastSampleMs) <= TOF_STALE_TIMEOUT_MS;
+}
+
+// The sensor is actually seeing a target. Assist requires this, not just
+// a living sensor - otherwise "sensor ok" can be true with no target for
+// minutes while the control law runs on a frozen distance.
+static bool tofHasTarget(uint32_t now) {
+  return tofSeeded && (now - tofLastValidMs) <= TOF_NO_TARGET_TIMEOUT_MS;
 }
 
 static bool rightLegHeard(uint32_t now) {
@@ -116,6 +141,7 @@ static void initTof() {
     return;
   }
   tofInitialised  = true;
+  tofSeeded       = false;          // force a re-seed on the first reading
   tofLastSampleMs = millis();
   Serial.println("[ToF] VL53L1X ready");
 }
@@ -129,13 +155,32 @@ static void readTof(uint32_t now) {
 
   int16_t raw = vl53.distance();                  // -1 = invalid / no target
   vl53.clearInterrupt();                          // arm next measurement
-  tofLastSampleMs = now;
+  tofLastSampleMs = now;                          // sensor is alive and ranging
 
-  if (raw > 0 && raw < TOF_VALID_MAX_MM) {
-    filteredDistance = DISTANCE_ALPHA * raw + (1.0f - DISTANCE_ALPHA) * filteredDistance;
+  if (raw <= 0 || raw >= TOF_VALID_MAX_MM) {
+    velocity = 0;                                 // no target -> never assist
+    return;                                       // tofLastValidMs left alone
   }
-  velocity = filteredDistance - previousDistance;
+
+  // SAFETY: after a gap in VALID readings (target lost to a trouser fold,
+  // sunlight, an out-of-range swing, or a sensor re-init), re-seed the filter.
+  // Differencing the new reading against a stale one produced a false velocity
+  // of a few hundred mm/sample, which saturated the assist curve and commanded
+  // near-full power - often in the opposite direction.
+  if (!tofSeeded || (now - tofLastValidMs) > TOF_RESEED_AFTER_MS) {
+    filteredDistance = raw;
+    previousDistance = raw;
+    velocity         = 0;
+    tofSeeded        = true;
+    tofLastValidMs   = now;
+    return;
+  }
+
+  filteredDistance = DISTANCE_ALPHA * raw + (1.0f - DISTANCE_ALPHA) * filteredDistance;
+  velocity = constrain(filteredDistance - previousDistance,
+                       -MAX_VELOCITY_MM, MAX_VELOCITY_MM);
   previousDistance = filteredDistance;
+  tofLastValidMs   = now;
 }
 
 static int16_t read16(TwoWire& bus) {
@@ -166,6 +211,7 @@ static void readMpu() {
 
 static void initMpu() {
   I2C_MPU.begin(PIN_MPU_SDA, PIN_MPU_SCL, MPU_I2C_FREQ_HZ);
+  I2C_MPU.setTimeOut(MPU_I2C_TIMEOUT_MS);         // never block the control loop
   I2C_MPU.beginTransmission(MPU_I2C_ADDR);
   I2C_MPU.write(0x6B);                            // PWR_MGMT_1
   I2C_MPU.write(0);                               // wake up
@@ -182,18 +228,39 @@ static void updateBattery() {
   batteryPercent = constrain((int)pct, 0, 100);
 }
 
+
+// =====================================================================
+//  Motor thermal budget (open loop - no current sensor on this build)
+// =====================================================================
+static void updateThermal(float duty) {
+  const float dt = CONTROL_PERIOD_MS / 1000.0f;
+  const float f  = duty / 255.0f;
+  thermalLoad += (f * f / THERMAL_FULL_DUTY_S - thermalLoad / THERMAL_COOL_TAU_S) * dt;
+  thermalLoad = constrain(thermalLoad, 0.0f, 1.5f);
+}
+
+// 1.0 = full assist available, falling smoothly to THERMAL_MIN_ASSIST_FRAC.
+static float thermalHeadroom() {
+  if (!THERMAL_PROTECTION || thermalLoad <= THERMAL_WARN_LOAD) return 1.0f;
+  float f = 1.0f - (thermalLoad - THERMAL_WARN_LOAD) / (1.0f - THERMAL_WARN_LOAD);
+  return constrain(f, THERMAL_MIN_ASSIST_FRAC, 1.0f);
+}
+
 // =====================================================================
 //  Assist control
 // =====================================================================
 static void updateMotor(uint32_t now) {
-  bool allowed = motorEnabled && !otaInProgress && tofHealthy(now);
+  bool allowed = motorEnabled && !otaInProgress && tofHealthy(now) && tofHasTarget(now);
   if (STOP_MOTOR_IF_RIGHT_SILENT && !rightLegHeard(now)) allowed = false;
 
   if (!allowed) {                                 // stop immediately, no ramp-down
     motorOff();
     lastDirection = 0;
+    updateThermal(0);                             // keep cooling while off
     return;
   }
+
+  setBridge(true);                                // assist allowed: power the bridge
 
   int   sens = sensitivity;
   float v    = velocity;
@@ -207,12 +274,18 @@ static void updateMotor(uint32_t now) {
     targetPWM = 0;
   }
 
-  int direction = (v > sens) ? 1 : (v < -sens) ? -1 : 0;
+  // THERMAL: cap the assist ceiling by the remaining heat budget.
+  int maxDuty = PWM_MIN_ASSIST +
+                (int)((assistStrength - PWM_MIN_ASSIST) * thermalHeadroom());
+  if (targetPWM > maxDuty) targetPWM = maxDuty;
+
+  int direction = ((v > sens) ? 1 : (v < -sens) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
 
   if (RESET_RAMP_ON_REVERSAL && direction != 0 && lastDirection != 0 && direction != lastDirection) {
     smoothedPWM = 0;                              // brief stop, then ramp up again
     writeMotor(0, 0);
     lastDirection = direction;
+    updateThermal(0);
     return;
   }
   if (direction != 0) lastDirection = direction;
@@ -223,6 +296,8 @@ static void updateMotor(uint32_t now) {
   if (direction > 0)      writeMotor((int)smoothedPWM, 0);
   else if (direction < 0) writeMotor(0, (int)smoothedPWM);
   else                    writeMotor(0, 0);
+
+  updateThermal(direction != 0 ? smoothedPWM : 0);
 }
 
 // =====================================================================
@@ -231,14 +306,16 @@ static void updateMotor(uint32_t now) {
 static void handleData() {
   noteRequestFrom();
   uint32_t now = millis();
-  char json[400];
+  char json[448];
   snprintf(json, sizeof(json),
     "{\"distance\":%.2f,\"velocity\":%.2f,\"pwm\":%d,\"pitch\":%.2f,"
     "\"roll\":%.2f,\"battery\":%d,\"motorEnabled\":%s,\"assistStrength\":%d,"
-    "\"sensitivity\":%d,\"tofOk\":%s,\"rightLinkOk\":%s,\"uptimeMs\":%lu}",
+    "\"sensitivity\":%d,\"tofOk\":%s,\"tofTarget\":%s,\"thermal\":%.2f,"
+    "\"rightLinkOk\":%s,\"uptimeMs\":%lu}",
     filteredDistance, velocity, (int)smoothedPWM, pitch, roll, batteryPercent,
     motorEnabled ? "true" : "false", assistStrength, sensitivity,
-    tofHealthy(now) ? "true" : "false", rightLegHeard(now) ? "true" : "false",
+    tofHealthy(now) ? "true" : "false", tofHasTarget(now) ? "true" : "false",
+    thermalLoad, rightLegHeard(now) ? "true" : "false",
     (unsigned long)now);
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
@@ -305,16 +382,18 @@ void setup() {
   // Motor driver: PWM channels at zero BEFORE enabling the bridge.
   ledcAttach(PIN_MOTOR_RPWM, MOTOR_PWM_FREQ_HZ, MOTOR_PWM_BITS);
   ledcAttach(PIN_MOTOR_LPWM, MOTOR_PWM_FREQ_HZ, MOTOR_PWM_BITS);
-  motorOff();
   pinMode(PIN_MOTOR_REN, OUTPUT);
   pinMode(PIN_MOTOR_LEN, OUTPUT);
-  digitalWrite(PIN_MOTOR_REN, HIGH);
-  digitalWrite(PIN_MOTOR_LEN, HIGH);
+  digitalWrite(PIN_MOTOR_REN, LOW);   // bridge stays disabled until assist runs
+  digitalWrite(PIN_MOTOR_LEN, LOW);
+  bridgeEnabled = false;
+  motorOff();
 
   analogSetPinAttenuation(PIN_BATTERY_ADC, ADC_11db);
 
   initMpu();
   I2C_TOF.begin(PIN_TOF_SDA, PIN_TOF_SCL, TOF_I2C_FREQ_HZ);
+  I2C_TOF.setTimeOut(TOF_I2C_TIMEOUT_MS);         // never block the control loop
   initTof();
 
   // Wi-Fi: static IP, no power-save (lower latency), auto-reconnect.
@@ -335,6 +414,19 @@ void setup() {
   else Serial.println("[WiFi] not connected yet - will keep trying in the background");
 
   updateBattery();
+
+  // SAFETY: watch the control loop. A wedged I2C bus or a stuck handler would
+  // otherwise leave the LEDC channels driving the motor at their last duty
+  // indefinitely, with no CPU left to switch them off.
+  esp_task_wdt_config_t wdtCfg = {
+    .timeout_ms     = CONTROL_WDT_TIMEOUT_MS,
+    .idle_core_mask = 0,
+    .trigger_panic  = true
+  };
+  if (esp_task_wdt_init(&wdtCfg) == ESP_ERR_INVALID_STATE) {
+    esp_task_wdt_reconfigure(&wdtCfg);            // core 3.x already started it
+  }
+  esp_task_wdt_add(NULL);                         // subscribe loop()
 }
 
 void loop() {
@@ -369,5 +461,6 @@ void loop() {
     if (STOP_MOTOR_IF_RIGHT_SILENT && !rightLegHeard(now)) Serial.println("[L] right leg silent - motor held off");
   }
 
+  esp_task_wdt_reset();
   delay(1);
 }

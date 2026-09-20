@@ -34,10 +34,16 @@ Power the sensors from **3.3 V** and connect **all grounds together**: ESP32, se
 
 ## Battery measurement
 
-The firmware assumes a **single-cell Li-ion** reading (3.0 V = 0%, 4.2 V = 100%) through a **2:1 divider**. If the pack is different (for example the 12 V motor battery), change `BATTERY_DIVIDER_RATIO`, `BATTERY_EMPTY_V` and `BATTERY_FULL_V` in `config.h`. The voltage at GPIO 34 must **never exceed 3.3 V**.
+The firmware assumes a **single-cell Li-ion** reading (3.0 V = 0%, 4.2 V = 100%) through a **2:1 divider**. GPIO 34 at 11 dB attenuation tops out around 3.1 V, so the highest pack voltage this can represent is roughly 6.6 V.
+
+**The wiper motors run on 12 V, so this reading is the logic supply, not the motor pack.** The dashboard labels it accordingly. If you want the pack on the dashboard too, add a second divider on a spare ADC pin — a sagging motor pack changes the torque a given duty produces, and right now nothing would show it. The voltage at any ADC pin must **never exceed 3.3 V**.
 
 ## Motor-driver notes
 
-- PWM runs at 2 kHz with 8-bit resolution (duty 0–255).
-- The firmware sets both PWM outputs to 0 *before* enabling `R_EN`/`L_EN` at power-up.
+- PWM runs at 2 kHz with 8-bit resolution (duty 0–255). Higher frequencies move the whine out of the audible band and reduce current ripple in the motor, at the cost of more switching loss in the BTS7960 — worth trying on the bench, not worth changing blind.
+- The firmware sets both PWM outputs to 0 *before* enabling `R_EN`/`L_EN`, and now **drops `R_EN`/`L_EN` low whenever the motor is not allowed to run**, so the motor coasts instead of the bridge sitting energised with 0% duty. The enables are the only path that removes drive independently of the PWM peripheral.
+
+### Recommended addition: current sense
+
+The BTS7960 breakout exposes `R_IS` and `L_IS` current-sense outputs, and they are currently unused. Wiring one to a spare ADC pin through a sense resistor would give real motor current, which is what the firmware needs for genuine stall detection and thermal protection — right now both are estimated from duty cycle alone. This is the single highest-value hardware change on the list.
 - Only one PWM pin is ever active at a time. On a direction change, the output drops to 0 for one control step and then ramps up again.
