@@ -350,7 +350,7 @@ static void updateMotor(uint32_t now) {
     targetPWM = 0;
   }
 
-  int direction = (v > sens) ? 1 : (v < -sens) ? -1 : 0;
+  int direction = ((v > sens) ? 1 : (v < -sens) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
 
   if (RESET_RAMP_ON_REVERSAL && direction != 0 && lastDirection != 0 && direction != lastDirection) {
     smoothedPWM = 0;                              // brief stop, then ramp up again

@@ -88,9 +88,18 @@
 // straight to full reverse power (protects gearbox, driver and the user).
 #define RESET_RAMP_ON_REVERSAL  true
 
-// Optional: VL53L1X timing budget in ms (15, 20, 33, 50, 100, 200, 500).
-// 0 = keep the library default, which is what the original prototype used.
-#define TOF_TIMING_BUDGET_MS    0
+// VL53L1X timing budget in ms (15, 20, 33, 50, 100, 200, 500).
+// This is a CONTROL GAIN, not just a sensor setting: velocity is measured in
+// mm per sample, so the sample period scales it directly. Leaving it at 0
+// ("library default") meant a library update could silently re-tune the
+// exoskeleton. 33 ms balances noise against latency; if you change it,
+// re-check Sensitivity on the bench.
+#define TOF_TIMING_BUDGET_MS    33
+// Direction of positive velocity for THIS leg. Set to -1 if the motor or the
+// linkage is mirrored and the leg is driven the wrong way. Verify with the
+// motor mechanically disconnected before trusting it.
+#define MOTOR_DIRECTION_SIGN    1
+
 
 // ---------------------------------------------------------------------
 //  Left-leg link
