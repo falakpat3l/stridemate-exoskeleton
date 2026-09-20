@@ -371,10 +371,27 @@ static void updateMotor(uint32_t now) {
 // =====================================================================
 //  Web server
 // =====================================================================
+static const char* COLLECTED_HEADERS[] = { "Origin" };
+
 static bool checkAuth() {
   if (strlen(DASHBOARD_PASSWORD) == 0) return true;
   if (server.authenticate(DASHBOARD_USER, DASHBOARD_PASSWORD)) return true;
   server.requestAuthentication();
+  return false;
+}
+
+// SAFETY: HTTP Basic auth alone does not protect a state change. Once the
+// phone has authenticated to this board, any other page open in that browser
+// could fire a request at it and the browser would attach the cached
+// credentials. CORS does not help - it hides the response, but the request
+// still executes, and executing is the whole payload for /motor?on=1.
+// State-changing routes are POST (below) and additionally reject a browser
+// Origin that is not this device.
+static bool sameOrigin() {
+  if (!server.hasHeader("Origin")) return true;   // curl and the like
+  String expected = String("http://") + WiFi.localIP().toString();
+  if (server.header("Origin") == expected) return true;
+  server.send(403, "text/plain", "cross-origin request rejected");
   return false;
 }
 
@@ -420,8 +437,9 @@ static void setupRoutes() {
 
   server.on("/data", HTTP_GET, handleData);
 
-  server.on("/setPWM", HTTP_GET, []() {          // assist strength 80..255
-    if (!checkAuth()) return;
+  // State-changing routes are POST + same-origin. See sameOrigin() above.
+  server.on("/setPWM", HTTP_POST, []() {         // assist strength 80..255
+    if (!checkAuth() || !sameOrigin()) return;
     int v;
     if (!readIntArg("value", PWM_MIN_ASSIST, 255, v)) return;
     assistStrength = v;
@@ -429,8 +447,8 @@ static void setupRoutes() {
     server.send(200, "text/plain", "OK");
   });
 
-  server.on("/setSensitivity", HTTP_GET, []() {  // dead-band 1..20
-    if (!checkAuth()) return;
+  server.on("/setSensitivity", HTTP_POST, []() { // dead-band 1..20
+    if (!checkAuth() || !sameOrigin()) return;
     int v;
     if (!readIntArg("value", 1, 20, v)) return;
     sensitivity = v;
@@ -438,8 +456,8 @@ static void setupRoutes() {
     server.send(200, "text/plain", "OK");
   });
 
-  server.on("/motor", HTTP_GET, []() {           // explicit on/off: /motor?on=1
-    if (!checkAuth()) return;
+  server.on("/motor", HTTP_POST, []() {          // explicit on/off: /motor?on=1
+    if (!checkAuth() || !sameOrigin()) return;
     int v;
     if (!readIntArg("on", 0, 1, v)) return;
     motorEnabled = (v == 1);
@@ -448,16 +466,16 @@ static void setupRoutes() {
     server.send(200, "text/plain", motorEnabled ? "ENABLED" : "DISABLED");
   });
 
-  server.on("/stop", HTTP_GET, []() {            // emergency stop (both legs)
-    if (!checkAuth()) return;
+  server.on("/stop", HTTP_POST, []() {           // emergency stop (both legs)
+    if (!checkAuth() || !sameOrigin()) return;
     motorEnabled = false;
     motorOff();
     bumpSettings();
     server.send(200, "text/plain", "STOPPED");
   });
 
-  server.on("/toggleMotor", HTTP_GET, []() {     // kept for compatibility
-    if (!checkAuth()) return;
+  server.on("/toggleMotor", HTTP_POST, []() {    // kept for compatibility
+    if (!checkAuth() || !sameOrigin()) return;
     motorEnabled = !motorEnabled;
     if (!motorEnabled) motorOff();
     bumpSettings();
@@ -483,6 +501,7 @@ static void startNetworkServices() {
   ArduinoOTA.begin();
 
   setupRoutes();
+  server.collectHeaders(COLLECTED_HEADERS, 1);    // needed by sameOrigin()
   server.begin();
   networkStarted = true;
 

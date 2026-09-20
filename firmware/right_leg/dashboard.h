@@ -165,7 +165,7 @@ function throttled(url) {
   return (value) => {
     latest = value;
     if (timer) return;
-    timer = setTimeout(() => { timer = null; fetch(url + latest); }, 150);
+    timer = setTimeout(() => { timer = null; fetch(url + latest, { method: 'POST' }); }, 150);
   };
 }
 const sendAssist = throttled('/setPWM?value=');
@@ -177,10 +177,10 @@ $('sensitivitySlider').addEventListener('input', function () {
   $('sensVal').textContent = this.value; sendSens(this.value);
 });
 async function stopAll() {
-  try { await fetch('/stop'); setMotorUi(false); } catch (e) {}
+  try { await fetch('/stop', { method: 'POST' }); setMotorUi(false); } catch (e) {}
 }
 async function setMotor(on) {
-  try { await fetch('/motor?on=' + (on ? 1 : 0)); setMotorUi(on); } catch (e) {}
+  try { await fetch('/motor?on=' + (on ? 1 : 0), { method: 'POST' }); setMotorUi(on); } catch (e) {}
 }
 
 drawChart();
