@@ -59,6 +59,7 @@ uint32_t tofLastInitTry  = 0;
 float smoothedPWM = 0;
 int   targetPWM   = 0;
 int   lastDirection = 0;      // +1, -1 or 0
+bool  bridgeEnabled = false;  // H-bridge enable pins (REN/LEN) state
 
 int batteryPercent = 0;
 
@@ -79,8 +80,20 @@ static void writeMotor(int forwardDuty, int reverseDuty) {
   ledcWrite(PIN_MOTOR_LPWM, reverseDuty);
 }
 
+// SAFETY: the H-bridge enable pins are the one path that removes drive
+// independently of the PWM peripheral. Previously they were driven HIGH once
+// in setup() and never touched, so every "off" in the firmware relied on the
+// LEDC channels continuing to output exactly 0%.
+static void setBridge(bool on) {
+  if (on == bridgeEnabled) return;
+  digitalWrite(PIN_MOTOR_REN, on ? HIGH : LOW);
+  digitalWrite(PIN_MOTOR_LEN, on ? HIGH : LOW);
+  bridgeEnabled = on;
+}
+
 static void motorOff() {
   writeMotor(0, 0);
+  setBridge(false);           // remove drive entirely; the motor coasts
   smoothedPWM = 0;
   targetPWM = 0;
 }
@@ -225,6 +238,8 @@ static void updateMotor(uint32_t now) {
     return;
   }
 
+  setBridge(true);                                // assist allowed: power the bridge
+
   int   sens = sensitivity;
   float v    = velocity;
   float absV = fabs(v);
@@ -335,11 +350,12 @@ void setup() {
   // Motor driver: PWM channels at zero BEFORE enabling the bridge.
   ledcAttach(PIN_MOTOR_RPWM, MOTOR_PWM_FREQ_HZ, MOTOR_PWM_BITS);
   ledcAttach(PIN_MOTOR_LPWM, MOTOR_PWM_FREQ_HZ, MOTOR_PWM_BITS);
-  motorOff();
   pinMode(PIN_MOTOR_REN, OUTPUT);
   pinMode(PIN_MOTOR_LEN, OUTPUT);
-  digitalWrite(PIN_MOTOR_REN, HIGH);
-  digitalWrite(PIN_MOTOR_LEN, HIGH);
+  digitalWrite(PIN_MOTOR_REN, LOW);   // bridge stays disabled until assist runs
+  digitalWrite(PIN_MOTOR_LEN, LOW);
+  bridgeEnabled = false;
+  motorOff();
 
   analogSetPinAttenuation(PIN_BATTERY_ADC, ADC_11db);
 
