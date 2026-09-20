@@ -111,6 +111,19 @@
 #define BATTERY_FULL_V          4.20f  // (original) 100 %
 
 // ---------------------------------------------------------------------
+//  Fault handling
+// ---------------------------------------------------------------------
+// SAFETY: an I2C transaction that never completes stops the control loop,
+// while the LEDC peripheral keeps applying the last duty cycle in hardware.
+// Bound both buses so a wedged sensor cannot hold the motor on.
+#define MPU_I2C_TIMEOUT_MS      20
+#define TOF_I2C_TIMEOUT_MS      20
+
+// SAFETY: if loop() stops feeding the watchdog for this long the board
+// resets, which lands in the motor-disabled-at-boot state.
+#define CONTROL_WDT_TIMEOUT_MS  1000
+
+// ---------------------------------------------------------------------
 //  Serial debug output
 // ---------------------------------------------------------------------
 #define SERIAL_BAUD             115200 // (original)

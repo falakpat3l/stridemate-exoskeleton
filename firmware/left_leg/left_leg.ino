@@ -24,6 +24,7 @@
 #include <ArduinoOTA.h>
 #include <Wire.h>
 #include <math.h>
+#include "esp_task_wdt.h"
 #include "Adafruit_VL53L1X.h"
 
 #include "config.h"
@@ -209,6 +210,7 @@ static void readMpu() {
 
 static void initMpu() {
   I2C_MPU.begin(PIN_MPU_SDA, PIN_MPU_SCL, MPU_I2C_FREQ_HZ);
+  I2C_MPU.setTimeOut(MPU_I2C_TIMEOUT_MS);         // never block the control loop
   I2C_MPU.beginTransmission(MPU_I2C_ADDR);
   I2C_MPU.write(0x6B);                            // PWR_MGMT_1
   I2C_MPU.write(0);                               // wake up
@@ -361,6 +363,7 @@ void setup() {
 
   initMpu();
   I2C_TOF.begin(PIN_TOF_SDA, PIN_TOF_SCL, TOF_I2C_FREQ_HZ);
+  I2C_TOF.setTimeOut(TOF_I2C_TIMEOUT_MS);         // never block the control loop
   initTof();
 
   // Wi-Fi: static IP, no power-save (lower latency), auto-reconnect.
@@ -381,6 +384,19 @@ void setup() {
   else Serial.println("[WiFi] not connected yet - will keep trying in the background");
 
   updateBattery();
+
+  // SAFETY: watch the control loop. A wedged I2C bus or a stuck handler would
+  // otherwise leave the LEDC channels driving the motor at their last duty
+  // indefinitely, with no CPU left to switch them off.
+  esp_task_wdt_config_t wdtCfg = {
+    .timeout_ms     = CONTROL_WDT_TIMEOUT_MS,
+    .idle_core_mask = 0,
+    .trigger_panic  = true
+  };
+  if (esp_task_wdt_init(&wdtCfg) == ESP_ERR_INVALID_STATE) {
+    esp_task_wdt_reconfigure(&wdtCfg);            // core 3.x already started it
+  }
+  esp_task_wdt_add(NULL);                         // subscribe loop()
 }
 
 void loop() {
@@ -415,5 +431,6 @@ void loop() {
     if (STOP_MOTOR_IF_RIGHT_SILENT && !rightLegHeard(now)) Serial.println("[L] right leg silent - motor held off");
   }
 
+  esp_task_wdt_reset();
   delay(1);
 }
