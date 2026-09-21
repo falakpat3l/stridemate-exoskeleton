@@ -84,6 +84,10 @@
 // larger is a sensor artefact, not a leg movement.
 #define MAX_VELOCITY_MM         30.0f
 
+// The same ceiling expressed per second, for ASSIST_CURVE_MODE 1. A human
+// leg does not move the sensor target faster than this.
+#define MAX_VELOCITY_MM_S       2000.0f
+
 // When the motor must reverse direction, ramp from zero instead of jumping
 // straight to full reverse power (protects gearbox, driver and the user).
 #define RESET_RAMP_ON_REVERSAL  true
@@ -117,6 +121,92 @@
 #define BATTERY_DIVIDER_RATIO   2.0f   // (original)
 #define BATTERY_EMPTY_V         3.00f  // (original) 0 %
 #define BATTERY_FULL_V          4.20f  // (original) 100 %
+
+
+// ---------------------------------------------------------------------
+//  Assist curve mode
+// ---------------------------------------------------------------------
+// 0 = LEGACY, exactly the original prototype's curve. Velocity is measured
+//     in mm per SENSOR SAMPLE and
+//         duty = PWM_MIN_ASSIST + PWM_CURVE_GAIN * |v|^PWM_CURVE_EXPONENT
+//     That reaches the 255 ceiling at about 17 mm/sample, which is below
+//     walking speed, so in practice the device is closer to bang-bang than
+//     proportional. See docs/how-it-works.md.
+//
+// 1 = PROPORTIONAL. Velocity is measured in mm/SECOND against the real
+//     interval between samples, so the tuning no longer depends on
+//     TOF_TIMING_BUDGET_MS at all. Duty rises across the whole speed range
+//     up to ASSIST_SPEED_FULL_MMS instead of saturating immediately.
+//
+// Mode 0 is the default: behaviour is unchanged until someone deliberately
+// switches. Mode 1 needs Sensitivity re-tuned on the bench, because its
+// units change from mm/sample to mm/s.
+#define ASSIST_CURVE_MODE        0
+
+// PROPORTIONAL mode only.
+#define ASSIST_SPEED_FULL_MMS    600.0f  // speed at which assist reaches max
+#define ASSIST_CURVE_EXPONENT_P  1.0f    // 1.0 = linear; >1 = gentler at low speed
+#define SENSITIVITY_MMS_PER_STEP 20.0f   // one slider step, in mm/s
+
+// ---------------------------------------------------------------------
+//  Motor pack monitoring  (OFF until the divider is wired - see issue #6)
+// ---------------------------------------------------------------------
+// The battery figure above is the LOGIC supply. GPIO 34 at 11 dB tops out
+// near 3.1 V, so through a 2:1 divider it cannot represent the 12 V motor
+// pack at all. A sagging pack changes the torque a given duty produces,
+// and nothing would show it.
+//
+// Wire a second divider from the motor pack to PIN_PACK_ADC, set the ratio
+// to match your resistors, then set PACK_MONITOR_ENABLED to true. The
+// voltage at the ADC pin must NEVER exceed 3.3 V.
+#define PACK_MONITOR_ENABLED     false
+#define PIN_PACK_ADC             35      // input-only ADC pin, free on this build
+#define PACK_DIVIDER_RATIO       6.0f    // e.g. 100k/20k divider = 6:1
+#define PACK_EMPTY_V             9.0f    // 0 %  - adjust to your pack chemistry
+#define PACK_FULL_V              12.6f   // 100 %
+
+// ---------------------------------------------------------------------
+//  Motor current sensing  (OFF until wired - see issue #4)
+// ---------------------------------------------------------------------
+// The BTS7960 exposes R_IS / L_IS current-sense outputs. Wire one through a
+// resistor to ground at PIN_CURRENT_ADC and set CURRENT_SENSE_ENABLED true.
+//
+// With current available, two things stop being guesses:
+//   * the thermal model integrates real I^2t instead of duty^2
+//   * a stalled motor is DETECTED rather than inferred
+//
+// CURRENT_SENSE_RATIO is the driver's current-sense ratio (dIS), about
+// 8500:1 on a BTS7960. Sense current = motor current / ratio, so the ADC
+// voltage is that times CURRENT_SENSE_RESISTOR_OHMS. Check both against
+// your own parts before trusting the reading.
+#define CURRENT_SENSE_ENABLED    false
+#define PIN_CURRENT_ADC          36      // input-only ADC pin
+#define CURRENT_SENSE_RATIO      8500.0f
+#define CURRENT_SENSE_RESISTOR_OHMS 1000.0f
+#define CURRENT_ZERO_OFFSET_MV   0.0f    // measured ADC reading at zero current
+
+// SAFETY: stall detection. If the motor is drawing more than this while the
+// leg is not actually moving, it is pushing against something. Latches the
+// motor off until it is re-enabled from the dashboard, which makes it a
+// deliberate acknowledgement rather than something that silently resets.
+#define CURRENT_STALL_A          6.0f
+#define CURRENT_STALL_MS         400     // sustained for this long
+#define CURRENT_STALL_MOTION_MM  3.0f    // "not moving" threshold over that window
+
+// Current at which the thermal budget fills at the same rate full duty does.
+// Used only when CURRENT_SENSE_ENABLED. Set from the motor's rated current.
+#define MOTOR_CURRENT_FULL_A     8.0f
+
+// ---------------------------------------------------------------------
+//  Tilt estimation
+// ---------------------------------------------------------------------
+// The MPU6050's gyro was read and thrown away, leaving tilt accelerometer-
+// only - which is noisiest exactly when the leg is accelerating, i.e. while
+// walking. A complementary filter uses the gyro data already being read.
+// Set false to get back the original accelerometer-only values.
+#define USE_GYRO_FUSION          true
+#define GYRO_FUSION_ALPHA        0.98f   // weight on the integrated gyro
+#define MPU_GYRO_LSB_PER_DPS     131.0f  // +/-250 dps default full scale
 
 // ---------------------------------------------------------------------
 //  Motor thermal budget  (OPEN LOOP - read docs/safety.md before trusting it)
