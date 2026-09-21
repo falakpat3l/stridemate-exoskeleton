@@ -44,7 +44,7 @@ flowchart LR
 
 1. The distance sensor measures a distance (in mm) that changes as the leg moves. The firmware filters it and works out how fast it's changing (the **velocity**).
 2. When the distance is between **50 and 450 mm** and the velocity is above the **sensitivity** threshold, the motor gets a command: `duty = 80 + 2.5 × |velocity|^1.5`. That value is capped at the **assist strength**, capped again by the remaining thermal budget, and smoothed so the motor ramps up gently.
-   > Note: this curve reaches the 255 ceiling at about 17 mm per sensor sample, which is below normal walking speed — so in practice the device behaves closer to bang-bang than proportional. [how-it-works.md](docs/how-it-works.md) has the numbers.
+   > Since v1.3.0 the default is the **proportional** curve (`ASSIST_CURVE_MODE 1`): velocity in mm/s, rising evenly across the speed range. The original per-sample curve is still available as mode 0. [how-it-works.md](docs/how-it-works.md) has the numbers.
 3. The sign of the velocity sets the motor direction.
 4. The right leg hosts the dashboard and passes your settings on to the left leg.
 
@@ -88,6 +88,17 @@ Step-by-step guide: [docs/getting-started.md](docs/getting-started.md).
 - ✅ Gyro and accelerometer fused for tilt (`USE_GYRO_FUSION`).
 - ✅ Firmware support written for motor current sensing and motor-pack voltage — both ship disabled, waiting on the wiring. See the open issues.
 - 🔜 Possible next steps: detect gait phases, log sessions, settle `ASSIST_CURVE_MODE`.
+
+## Who continues this
+
+The hardware is at **IIT Hyderabad**, with **B Dileep Kumar**
+([@Dileep195](https://github.com/Dileep195)). The open issues labelled
+`needs-bench-test` and `hardware` stay open because they need the physical
+device: the software half of each is written and ships disabled, and what
+remains is wiring, measuring and flashing.
+
+Anyone continuing from there is doing their own work on it and holds the
+copyright in what they write. See [NOTICE.md](NOTICE.md).
 
 ## Team
 

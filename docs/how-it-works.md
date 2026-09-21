@@ -64,10 +64,12 @@ What remains is a matter of shape and of principle:
 
 | Mode | Velocity unit | Saturates at | Depends on the timing budget? |
 |---|---|---|---|
-| **0** (default) | mm per sensor sample | ~515 mm/s at 33 ms | Yes |
-| **1** | mm per second | `ASSIST_SPEED_FULL_MMS` (600 mm/s) | No |
+| **0** | mm per sensor sample | ~515 mm/s at 33 ms | Yes |
+| **1** (default) | mm per second | `ASSIST_SPEED_FULL_MMS` (600 mm/s) | No |
 
-Mode 1 measures the real interval between valid samples, so the tuning holds whatever the sensor is doing, and the response is linear across the range. Mode 0 is the default, so nothing changes until someone decides. **Switching to mode 1 needs Sensitivity re-tuned**, because its units change from mm/sample to mm/s — one slider step becomes `SENSITIVITY_MMS_PER_STEP` (20 mm/s).
+Mode 1 measures the real interval between valid samples, so the tuning holds whatever the sensor is doing, and the response is linear across the range.
+
+**Mode 1 is the default as of v1.3.0.** Sensitivity now means mm/s rather than mm per sample — one slider step is `SENSITIVITY_MMS_PER_STEP` (20 mm/s) — so it needs re-tuning on the bench. Set `ASSIST_CURVE_MODE` back to `0` for the original prototype's curve, exactly.
 
 ## Motor thermal budget
 
