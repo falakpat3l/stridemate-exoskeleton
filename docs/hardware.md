@@ -36,14 +36,18 @@ Power the sensors from **3.3 V** and connect **all grounds together**: ESP32, se
 
 The firmware assumes a **single-cell Li-ion** reading (3.0 V = 0%, 4.2 V = 100%) through a **2:1 divider**. GPIO 34 at 11 dB attenuation tops out around 3.1 V, so the highest pack voltage this can represent is roughly 6.6 V.
 
-**The wiper motors run on 12 V, so this reading is the logic supply, not the motor pack.** The dashboard labels it accordingly. If you want the pack on the dashboard too, add a second divider on a spare ADC pin — a sagging motor pack changes the torque a given duty produces, and right now nothing would show it. The voltage at any ADC pin must **never exceed 3.3 V**.
+**The wiper motors run on 12 V, so this reading is the logic supply, not the motor pack.**
+
+A second divider on `PIN_PACK_ADC` (GPIO 35 by default) fixes that: set `PACK_DIVIDER_RATIO` to match your resistors and `PACK_EMPTY_V` / `PACK_FULL_V` to your pack, then `PACK_MONITOR_ENABLED true`. The firmware then publishes `packPercent` alongside the logic battery. The dashboard labels it accordingly. If you want the pack on the dashboard too, add a second divider on a spare ADC pin — a sagging motor pack changes the torque a given duty produces, and right now nothing would show it. The voltage at any ADC pin must **never exceed 3.3 V**.
 
 ## Motor-driver notes
 
 - PWM runs at 2 kHz with 8-bit resolution (duty 0–255). Higher frequencies move the whine out of the audible band and reduce current ripple in the motor, at the cost of more switching loss in the BTS7960 — worth trying on the bench, not worth changing blind.
 - The firmware sets both PWM outputs to 0 *before* enabling `R_EN`/`L_EN`, and now **drops `R_EN`/`L_EN` low whenever the motor is not allowed to run**, so the motor coasts instead of the bridge sitting energised with 0% duty. The enables are the only path that removes drive independently of the PWM peripheral.
 
-### Recommended addition: current sense
+### Recommended addition: current sense  (firmware ready — `CURRENT_SENSE_ENABLED`)
 
 The BTS7960 breakout exposes `R_IS` and `L_IS` current-sense outputs, and they are currently unused. Wiring one to a spare ADC pin through a sense resistor would give real motor current, which is what the firmware needs for genuine stall detection and thermal protection — right now both are estimated from duty cycle alone. This is the single highest-value hardware change on the list.
+
+**The firmware side is already written.** Wire one `IS` pin through a resistor to ground at `PIN_CURRENT_ADC` (GPIO 36 by default), set `CURRENT_SENSE_RESISTOR_OHMS` and `CURRENT_SENSE_RATIO` to match your parts, measure the zero-current reading into `CURRENT_ZERO_OFFSET_MV`, then set `CURRENT_SENSE_ENABLED true`. Nothing else changes.
 - Only one PWM pin is ever active at a time. On a direction change, the output drops to 0 for one control step and then ramps up again.

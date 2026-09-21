@@ -51,9 +51,23 @@ If the direction flips while the motor is running, the output drops to 0 for one
 | 50 ms | 5.0 | 10.0 | **20.0** | **40.0** |
 | 100 ms | 10.0 | **20.0** | **40.0** | **80.0** |
 
-Bold values are past the clamp. So at anything beyond a slow, deliberate movement the device behaves as **bang-bang**, not proportional: Sensitivity decides *whether* to assist and Assist Strength decides *how hard*, while the curve between them does little.
+Bold values are past the clamp, where the velocity term stops contributing anything.
 
-This is inherited unchanged from the original prototype. It is not necessarily wrong — a fixed assist level may well be what the device should do — but it is worth knowing that the exponent and gain are close to decorative at walking speed. To make the assist genuinely proportional, express velocity in mm/s (divide by the sample interval) and re-fit the gain across the speed range you care about; for 0–600 mm/s across duty 80–255 with exponent 1.0, the gain is about 0.29.
+**Pinning the timing budget fixed most of this.** At 33 ms, 17 mm/sample works out to about **515 mm/s** — a brisk leg speed, not a shuffle. At the library default the saturation point sat far lower, which is what made the device effectively bang-bang. So the important fix was pinning the budget, not the curve itself.
+
+What remains is a matter of shape and of principle:
+
+- The curve is **convex** — slow at low speed, then steep — rather than proportional.
+- Its behaviour still **depends on the sample period**. Change `TOF_TIMING_BUDGET_MS` and the tuning moves with it, silently.
+
+`ASSIST_CURVE_MODE` in `config.h` offers both:
+
+| Mode | Velocity unit | Saturates at | Depends on the timing budget? |
+|---|---|---|---|
+| **0** (default) | mm per sensor sample | ~515 mm/s at 33 ms | Yes |
+| **1** | mm per second | `ASSIST_SPEED_FULL_MMS` (600 mm/s) | No |
+
+Mode 1 measures the real interval between valid samples, so the tuning holds whatever the sensor is doing, and the response is linear across the range. Mode 0 is the default, so nothing changes until someone decides. **Switching to mode 1 needs Sensitivity re-tuned**, because its units change from mm/sample to mm/s — one slider step becomes `SENSITIVITY_MMS_PER_STEP` (20 mm/s).
 
 ## Motor thermal budget
 
@@ -64,6 +78,10 @@ load += (duty² / THERMAL_FULL_DUTY_S − load / THERMAL_COOL_TAU_S) × dt
 ```
 
 with `duty` normalised to 0–1. Past `THERMAL_WARN_LOAD` (0.80) the assist ceiling folds back smoothly toward `THERMAL_MIN_ASSIST_FRAC` (25%) of its range. It folds back rather than cutting out, because losing assist abruptly mid-stride is itself a hazard — and since a smaller duty also reduces heating, the loop settles instead of oscillating.
+
+The timestep is **measured**, not assumed. It previously used a fixed `CONTROL_PERIOD_MS`, but the same loop serves HTTP and OTA, so whenever it is busy the real interval is longer and the estimate read low.
+
+With `CURRENT_SENSE_ENABLED` the model integrates **real I²t** instead of duty², which is the difference between a measurement and a guess.
 
 In simulation, no realistic walking profile reaches the warn point; a motor held at full duty starts folding back after about 56 s and settles at 80% assist.
 
@@ -93,6 +111,13 @@ In simulation, no realistic walking profile reaches the warn point; a motor held
 | `THERMAL_MIN_ASSIST_FRAC` | 0.25 | Floor for the fold-back |
 | `MPU_I2C_TIMEOUT_MS` / `TOF_I2C_TIMEOUT_MS` | 20 | Never block the control loop |
 | `CONTROL_WDT_TIMEOUT_MS` | 1000 | Watchdog reset if `loop()` stalls |
+| `ASSIST_CURVE_MODE` | 0 | 0 = legacy per-sample curve, 1 = proportional mm/s |
+| `ASSIST_SPEED_FULL_MMS` | 600 | Mode 1: speed at which assist reaches maximum |
+| `SENSITIVITY_MMS_PER_STEP` | 20 | Mode 1: one Sensitivity slider step, in mm/s |
+| `USE_GYRO_FUSION` | true | Complementary filter for tilt instead of accelerometer alone |
+| `PACK_MONITOR_ENABLED` | false | Motor-pack voltage on a second divider |
+| `CURRENT_SENSE_ENABLED` | false | BTS7960 current sense: real I²t and stall detection |
+| `CURRENT_STALL_A` | 6.0 | Current that counts as a stall, with no leg movement |
 
 ## Two-leg communication
 

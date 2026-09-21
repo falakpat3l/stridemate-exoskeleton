@@ -31,6 +31,12 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .badge { display:inline-block; padding:3px 10px; border-radius:10px; font-size:13px; }
   .ok { background:#2e7d32; } .bad { background:#c62828; } .warn { background:#ef6c00; }
   .info { background:#37474f; }
+  .note { font-size:11.5px; color:#999; margin-top:8px; }
+  .hidden { display:none; }
+  .stallbar {
+    background:#c62828; color:#fff; font-weight:bold; border-radius:12px;
+    margin:12px; padding:14px; font-size:16px;
+  }
   canvas { background:#fff; border-radius:10px; width:100%; height:220px; }
   .legend span { margin:0 10px; font-size:14px; }
 </style>
@@ -38,6 +44,8 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 <body>
 <h1>StrideMate Exoskeleton</h1>
 <div class="status" id="conn">connecting...</div>
+
+<div class="stallbar hidden" id="stallBar">STALL</div>
 
 <div class="card">
   <div>Motor: <b id="motorState">?</b></div>
@@ -69,11 +77,14 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 </div>
 
 <div class="card">
-  <h2>Battery <span class="badge info">logic supply</span></h2>
+  <h2>Battery</h2>
   <div class="grid">
-    <span>Right leg</span><span class="value" id="battery">0%</span>
-    <span>Left leg</span><span class="value" id="leftBattery">-</span>
+    <span>Right logic</span><span class="value" id="battery">0%</span>
+    <span>Left logic</span><span class="value" id="leftBattery">-</span>
+    <span>Right pack</span><span class="value" id="pack">-</span>
+    <span>Left pack</span><span class="value" id="leftPack">-</span>
   </div>
+  <div class="note" id="packNote">Motor pack not monitored. The logic figures say nothing about it.</div>
 </div>
 
 <div class="card">
@@ -81,7 +92,12 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   <div class="grid">
     <span>Right leg</span><span class="value" id="thermal">0%</span>
     <span>Left leg</span><span class="value" id="leftThermal">-</span>
+    <span>Right peak</span><span class="value" id="thermalPeak">0%</span>
+    <span>Left peak</span><span class="value" id="leftThermalPeak">-</span>
+    <span>Right current</span><span class="value" id="current">-</span>
+    <span>Left current</span><span class="value" id="leftCurrent">-</span>
   </div>
+  <div class="note" id="loadNote">Estimated from duty cycle. Peak is the number to calibrate against.</div>
 </div>
 
 <div class="card">
@@ -157,6 +173,33 @@ async function poll() {
     const rt = Math.round(d.thermal * 100);
     $('thermal').textContent = rt + '%';
     $('leftThermal').textContent = d.leftOnline ? Math.round(d.leftThermal * 100) + '%' : '-';
+    $('thermalPeak').textContent = Math.round((d.thermalPeak || 0) * 100) + '%';
+    $('leftThermalPeak').textContent = d.leftOnline
+      ? Math.round((d.leftThermalPeak || 0) * 100) + '%' : '-';
+
+    // packPercent is -1 when no divider is wired. That is not 0 %.
+    const pk = (v) => (v == null || v < 0) ? 'not wired' : Math.round(v) + '%';
+    $('pack').textContent = pk(d.packPercent);
+    $('leftPack').textContent = d.leftOnline ? pk(d.leftPackPercent) : '-';
+    $('packNote').style.display =
+      (d.packPercent >= 0 || (d.leftOnline && d.leftPackPercent >= 0)) ? 'none' : '';
+
+    const amps = (v) => (v == null || v <= 0) ? 'not wired' : (+v).toFixed(1) + ' A';
+    $('current').textContent = amps(d.currentA);
+    $('leftCurrent').textContent = d.leftOnline ? amps(d.leftCurrentA) : '-';
+    $('loadNote').textContent = (d.currentA > 0 || (d.leftOnline && d.leftCurrentA > 0))
+      ? 'Measured from motor current.'
+      : 'Estimated from duty cycle. Peak is the number to calibrate against.';
+
+    // SAFETY: a latched stall has stopped the motor. Say so unmissably, and
+    // say how to clear it - re-enabling is the acknowledgement.
+    const rs = !!d.stall, ls = d.leftOnline && !!d.leftStall;
+    $('stallBar').classList.toggle('hidden', !(rs || ls));
+    if (rs || ls) {
+      $('stallBar').textContent = 'STALL - ' +
+        (rs && ls ? 'both legs' : rs ? 'right leg' : 'left leg') +
+        ' latched off. Clear the obstruction, then tap Enable motor.';
+    }
     const hot = d.thermal >= 0.8 || (d.leftOnline && d.leftThermal >= 0.8);
     $('thermBadge').textContent = hot ? 'ASSIST REDUCED' : 'normal';
     $('thermBadge').className = 'badge ' + (hot ? 'warn' : 'ok');

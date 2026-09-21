@@ -5,7 +5,11 @@
 StrideMate is a wearable lower-limb exoskeleton prototype that helps with walking. Each leg has its own **ESP32** with a distance sensor, a motion sensor and a motor. The two boards talk over Wi-Fi, and a phone dashboard shows live data and lets you set how much the motors help.
 
 > [!WARNING]
-> **Research prototype, not a medical device.** It hasn't been clinically validated or certified. Read [docs/safety.md](docs/safety.md) before powering the motors, and never test it on a person without supervision.
+> **Research prototype, not a medical device.** It hasn't been clinically validated or certified. Never test it on a person without supervision.
+>
+> ### 👉 If you are about to work on this, read **[BEFORE-YOU-FLASH-THIS.md](BEFORE-YOU-FLASH-THIS.md)** first.
+>
+> It is the honest state of the project: what is measured, what is guessed, and what has never been switched on. Then [docs/safety.md](docs/safety.md) before powering the motors.
 
 ## Highlights
 
@@ -81,7 +85,9 @@ Step-by-step guide: [docs/getting-started.md](docs/getting-started.md).
 - ⚠️ **Left-leg firmware is reconstructed.** The original wasn't available, so it hasn't been tested on hardware yet.
 - ⚠️ The refactored right-leg firmware compiles but hasn't been re-tested on the physical device.
 - ⚠️ Thermal fold-back ships **off** (`THERMAL_PROTECTION false`): the constants are simulated, not measured. The load estimate still runs and shows on the dashboard so you can calibrate it — see [docs/safety.md](docs/safety.md).
-- 🔜 Possible next steps: wire the BTS7960 current-sense pins for real stall detection, fuse gyro and accelerometer data for better tilt estimates, detect gait phases, log sessions.
+- ✅ Gyro and accelerometer fused for tilt (`USE_GYRO_FUSION`).
+- ✅ Firmware support written for motor current sensing and motor-pack voltage — both ship disabled, waiting on the wiring. See the open issues.
+- 🔜 Possible next steps: detect gait phases, log sessions, settle `ASSIST_CURVE_MODE`.
 
 ## Team
 

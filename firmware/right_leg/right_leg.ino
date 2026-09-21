@@ -51,8 +51,9 @@ WebServer server(80);
 // ---------------------------------------------------------------------
 float filteredDistance = 0;   // mm, low-pass filtered
 float previousDistance = 0;
-float velocity         = 0;   // mm per new sensor sample
-float pitch = 0, roll = 0;    // degrees, from accelerometer only
+float velocity         = 0;   // mm per new sensor sample (ASSIST_CURVE_MODE 0)
+float velocityMmS      = 0;   // mm per second          (ASSIST_CURVE_MODE 1)
+float pitch = 0, roll = 0;    // degrees
 
 bool     tofInitialised  = false;
 bool     tofSeeded       = false;   // filter holds a real measurement
@@ -64,7 +65,18 @@ float smoothedPWM = 0;
 int   targetPWM   = 0;
 int   lastDirection = 0;      // +1, -1 or 0
 bool  bridgeEnabled = false;  // H-bridge enable pins (REN/LEN) state
-float thermalLoad   = 0;      // open-loop heat estimate, 0..1.5 (1.0 = budget)
+float thermalLoad   = 0;      // heat estimate, 0..1.5 (1.0 = the budget)
+float thermalPeak   = 0;      // highest load seen since boot - calibration aid
+float motorCurrentA = 0;      // 0 unless CURRENT_SENSE_ENABLED
+
+// SAFETY: latched when the motor draws current without the leg moving.
+// Cleared only by re-enabling the motor, so it is acknowledged deliberately.
+bool     stallFault      = false;
+uint32_t stallSinceMs    = 0;
+float    stallRefDistance = 0;
+
+float packVolts   = 0;        // motor pack, 0 unless PACK_MONITOR_ENABLED
+int   packPercent = -1;       // -1 = not monitored
 
 int batteryPercent = 0;
 
@@ -82,6 +94,8 @@ volatile uint32_t settingsVersion = 1;   // bumped on every change
 // ---------------------------------------------------------------------
 struct LegTelemetry {
   float distance = 0, velocity = 0, pwm = 0, pitch = 0, roll = 0, battery = 0, thermal = 0;
+  float thermalPeak = 0, packPercent = -1, currentA = 0;
+  bool  stall = false;
 };
 LegTelemetry leftLeg;
 uint32_t     leftLastOkMs = 0;           // 0 = never received
@@ -128,6 +142,18 @@ static bool jsonNumber(const String& json, const char* key, float& out) {
   return true;
 }
 
+// Finds "key": true|false in a flat JSON string. Our own generator emits no
+// whitespace after the colon, so the first character decides it.
+static bool jsonBool(const String& json, const char* key, bool& out) {
+  String needle = String("\"") + key + "\"";
+  int k = json.indexOf(needle);
+  if (k < 0) return false;
+  int colon = json.indexOf(':', k + needle.length());
+  if (colon < 0) return false;
+  out = (json.charAt(colon + 1) == 't');
+  return true;
+}
+
 static bool leftOnline(uint32_t now) {
   uint32_t last;
   portENTER_CRITICAL(&leftMux);
@@ -167,7 +193,11 @@ static bool fetchLeftLeg() {
       jsonNumber(payload, "pitch",    t.pitch);
       jsonNumber(payload, "roll",     t.roll);
       jsonNumber(payload, "battery",  t.battery);
-      jsonNumber(payload, "thermal",  t.thermal);
+      jsonNumber(payload, "thermal",     t.thermal);
+      jsonNumber(payload, "thermalPeak", t.thermalPeak);
+      jsonNumber(payload, "packPercent", t.packPercent);
+      jsonNumber(payload, "currentA",    t.currentA);
+      jsonBool  (payload, "stall",       t.stall);
       ok = true;
     } else {
       // Fallback for the original left-leg firmware: first value = distance.
@@ -255,7 +285,8 @@ static void readTof(uint32_t now) {
   tofLastSampleMs = now;                          // sensor is alive and ranging
 
   if (raw <= 0 || raw >= TOF_VALID_MAX_MM) {
-    velocity = 0;                                 // no target -> never assist
+    velocity    = 0;                              // no target -> never assist
+    velocityMmS = 0;
     return;                                       // tofLastValidMs left alone
   }
 
@@ -268,14 +299,22 @@ static void readTof(uint32_t now) {
     filteredDistance = raw;
     previousDistance = raw;
     velocity         = 0;
+    velocityMmS      = 0;
     tofSeeded        = true;
     tofLastValidMs   = now;
     return;
   }
 
+  // The REAL interval between valid samples, not the configured one. This is
+  // what makes ASSIST_CURVE_MODE 1 independent of TOF_TIMING_BUDGET_MS.
+  const float sampleDtS = (now - tofLastValidMs) / 1000.0f;
+
   filteredDistance = DISTANCE_ALPHA * raw + (1.0f - DISTANCE_ALPHA) * filteredDistance;
   velocity = constrain(filteredDistance - previousDistance,
                        -MAX_VELOCITY_MM, MAX_VELOCITY_MM);
+  velocityMmS = (sampleDtS > 1e-4f)
+                  ? constrain(velocity / sampleDtS, -MAX_VELOCITY_MM_S, MAX_VELOCITY_MM_S)
+                  : 0.0f;
   previousDistance = filteredDistance;
   tofLastValidMs   = now;
 }
@@ -287,7 +326,7 @@ static int16_t read16(TwoWire& bus) {
   return (int16_t)((hi << 8) | lo);
 }
 
-static void readMpu() {
+static void readMpu(float dtS) {
   I2C_MPU.beginTransmission(MPU_I2C_ADDR);
   I2C_MPU.write(0x3B);                            // ACCEL_XOUT_H
   if (I2C_MPU.endTransmission(false) != 0) return;
@@ -297,13 +336,31 @@ static void readMpu() {
   int16_t ay = read16(I2C_MPU);
   int16_t az = read16(I2C_MPU);
   read16(I2C_MPU);                                // temperature (unused)
-  read16(I2C_MPU);                                // gyro X (unused for now)
-  read16(I2C_MPU);                                // gyro Y
-  read16(I2C_MPU);                                // gyro Z
+  int16_t gx = read16(I2C_MPU);                   // gyro X
+  int16_t gy = read16(I2C_MPU);                   // gyro Y
+  read16(I2C_MPU);                                // gyro Z (yaw, unused)
 
-  // Same formulas as the original prototype, so dashboard values match.
-  pitch = atan2((float)ay, (float)az) * 180.0f / PI;
-  roll  = atan2((float)ax, (float)az) * 180.0f / PI;
+  // Accelerometer-only tilt: the original prototype's formulas. Accurate at
+  // rest, noisy under the accelerations of walking - which is exactly when
+  // the number is being looked at.
+  const float accPitch = atan2((float)ay, (float)az) * 180.0f / PI;
+  const float accRoll  = atan2((float)ax, (float)az) * 180.0f / PI;
+
+  if (USE_GYRO_FUSION && dtS > 0.0f && dtS < 0.5f) {
+    // Complementary filter: trust the gyro over short intervals, and let the
+    // accelerometer pull it back so integration drift cannot accumulate.
+    // If tilt moves the wrong way on your build, negate these two rates -
+    // the sign depends on how the MPU6050 is mounted.
+    const float ratePitch = (float)gx / MPU_GYRO_LSB_PER_DPS;   // deg/s
+    const float rateRoll  = (float)gy / MPU_GYRO_LSB_PER_DPS;
+    pitch = GYRO_FUSION_ALPHA * (pitch + ratePitch * dtS)
+          + (1.0f - GYRO_FUSION_ALPHA) * accPitch;
+    roll  = GYRO_FUSION_ALPHA * (roll + rateRoll * dtS)
+          + (1.0f - GYRO_FUSION_ALPHA) * accRoll;
+  } else {
+    pitch = accPitch;
+    roll  = accRoll;
+  }
 }
 
 static void initMpu() {
@@ -325,15 +382,45 @@ static void updateBattery() {
   batteryPercent = constrain((int)pct, 0, 100);
 }
 
+// The 12 V motor pack, on its own divider. Off until one is wired: see
+// PACK_MONITOR_ENABLED in config.h.
+static void updatePack() {
+  if (!PACK_MONITOR_ENABLED) { packVolts = 0; packPercent = -1; return; }
+  uint32_t mv = 0;
+  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_PACK_ADC);
+  packVolts = (mv / 8.0f / 1000.0f) * PACK_DIVIDER_RATIO;
+  float pct = (packVolts - PACK_EMPTY_V) * 100.0f / (PACK_FULL_V - PACK_EMPTY_V);
+  packPercent = constrain((int)pct, 0, 100);
+}
+
+// Motor current from the BTS7960's IS pin. Off until wired: see
+// CURRENT_SENSE_ENABLED in config.h. Read every control cycle, because both
+// stall detection and the thermal model want it fresh.
+static void updateCurrent() {
+  if (!CURRENT_SENSE_ENABLED) { motorCurrentA = 0; return; }
+  const float mv = (float)analogReadMilliVolts(PIN_CURRENT_ADC) - CURRENT_ZERO_OFFSET_MV;
+  const float senseA = (mv / 1000.0f) / CURRENT_SENSE_RESISTOR_OHMS;
+  motorCurrentA = max(0.0f, senseA * CURRENT_SENSE_RATIO);
+}
+
 
 // =====================================================================
 //  Motor thermal budget (open loop - no current sensor on this build)
 // =====================================================================
-static void updateThermal(float duty) {
-  const float dt = CONTROL_PERIOD_MS / 1000.0f;
-  const float f  = duty / 255.0f;
-  thermalLoad += (f * f / THERMAL_FULL_DUTY_S - thermalLoad / THERMAL_COOL_TAU_S) * dt;
+static void updateThermal(float duty, float dtS) {
+  // dtS is MEASURED, not assumed. The control loop runs at best effort, so
+  // whenever the loop is busy the real interval is longer than
+  // CONTROL_PERIOD_MS and a fixed dt makes the estimate read low.
+  if (!(dtS > 0.0f) || dtS > 1.0f) dtS = CONTROL_PERIOD_MS / 1000.0f;
+
+  // With a current sensor this is real I^2t. Without one it is duty^2, an
+  // estimate - which is why THERMAL_PROTECTION ships disabled.
+  const float f = CURRENT_SENSE_ENABLED ? (motorCurrentA / MOTOR_CURRENT_FULL_A)
+                                        : (duty / 255.0f);
+
+  thermalLoad += (f * f / THERMAL_FULL_DUTY_S - thermalLoad / THERMAL_COOL_TAU_S) * dtS;
   thermalLoad = constrain(thermalLoad, 0.0f, 1.5f);
+  if (thermalLoad > thermalPeak) thermalPeak = thermalLoad;   // calibration aid
 }
 
 // 1.0 = full assist available, falling smoothly to THERMAL_MIN_ASSIST_FRAC.
@@ -346,26 +433,46 @@ static float thermalHeadroom() {
 // =====================================================================
 //  Assist control
 // =====================================================================
-static void updateMotor(uint32_t now) {
-  bool allowed = motorEnabled && !otaInProgress && tofHealthy(now) && tofHasTarget(now);
+static void updateMotor(uint32_t now, float dtS) {
+  bool allowed = motorEnabled && !otaInProgress && tofHealthy(now) && tofHasTarget(now)
+                 && !stallFault;
   if (STOP_MOTOR_IF_LEFT_OFFLINE && !leftOnline(now)) allowed = false;
 
   if (!allowed) {                                 // stop immediately, no ramp-down
     motorOff();
     lastDirection = 0;
-    updateThermal(0);                             // keep cooling while off
+    stallSinceMs  = 0;
+    updateThermal(0, dtS);                        // keep cooling while off
     return;
   }
 
   setBridge(true);                                // assist allowed: power the bridge
 
-  int   sens = sensitivity;
-  float v    = velocity;
-  float absV = fabs(v);
-  bool  inRange = filteredDistance >= MIN_DISTANCE_MM && filteredDistance <= MAX_DISTANCE_MM;
+  const int sens = sensitivity;
 
-  if (inRange && absV > sens) {
+#if ASSIST_CURVE_MODE == 0
+  const float vSigned = velocity;                 // mm per sensor sample
+  const float dead    = (float)sens;
+#else
+  const float vSigned = velocityMmS;              // mm per second
+  const float dead    = (float)sens * SENSITIVITY_MMS_PER_STEP;
+#endif
+  const float absV    = fabs(vSigned);
+  const bool  inRange = filteredDistance >= MIN_DISTANCE_MM &&
+                        filteredDistance <= MAX_DISTANCE_MM;
+
+  if (inRange && absV > dead) {
+#if ASSIST_CURVE_MODE == 0
     float duty = PWM_MIN_ASSIST + pow(absV, PWM_CURVE_EXPONENT) * PWM_CURVE_GAIN;
+#else
+    // Rises across the whole speed range instead of saturating at about
+    // 17 mm/sample, which is what makes mode 0 effectively bang-bang.
+    const float span = constrain((absV - dead) /
+                                 max(1.0f, ASSIST_SPEED_FULL_MMS - dead), 0.0f, 1.0f);
+    float duty = PWM_MIN_ASSIST +
+                 (float)((int)assistStrength - PWM_MIN_ASSIST) *
+                 pow(span, ASSIST_CURVE_EXPONENT_P);
+#endif
     targetPWM = constrain((int)min(duty, 255.0f), PWM_MIN_ASSIST, (int)assistStrength);
   } else {
     targetPWM = 0;
@@ -376,13 +483,13 @@ static void updateMotor(uint32_t now) {
                 (int)((assistStrength - PWM_MIN_ASSIST) * thermalHeadroom());
   if (targetPWM > maxDuty) targetPWM = maxDuty;
 
-  int direction = ((v > sens) ? 1 : (v < -sens) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
+  int direction = ((vSigned > dead) ? 1 : (vSigned < -dead) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
 
   if (RESET_RAMP_ON_REVERSAL && direction != 0 && lastDirection != 0 && direction != lastDirection) {
     smoothedPWM = 0;                              // brief stop, then ramp up again
     writeMotor(0, 0);
     lastDirection = direction;
-    updateThermal(0);
+    updateThermal(0, dtS);
     return;
   }
   if (direction != 0) lastDirection = direction;
@@ -394,7 +501,24 @@ static void updateMotor(uint32_t now) {
   else if (direction < 0) writeMotor(0, (int)smoothedPWM);
   else                    writeMotor(0, 0);
 
-  updateThermal(direction != 0 ? smoothedPWM : 0);
+  updateThermal(direction != 0 ? smoothedPWM : 0, dtS);
+
+  // SAFETY: a stall is current flowing while the leg is not actually moving.
+  // Inert until CURRENT_SENSE_ENABLED - without a sensor there is nothing to
+  // detect it with, which is the whole point of wiring the IS pin.
+  if (CURRENT_SENSE_ENABLED && motorCurrentA > CURRENT_STALL_A && smoothedPWM > 0) {
+    if (stallSinceMs == 0) {
+      stallSinceMs     = now;
+      stallRefDistance = filteredDistance;
+    } else if ((now - stallSinceMs) >= CURRENT_STALL_MS &&
+               fabs(filteredDistance - stallRefDistance) < CURRENT_STALL_MOTION_MM) {
+      stallFault = true;                          // latched until re-enabled
+      motorOff();
+      Serial.println("[STALL] current high with no movement - motor latched off");
+    }
+  } else {
+    stallSinceMs = 0;
+  }
 }
 
 // =====================================================================
@@ -432,20 +556,25 @@ static void handleData() {
   l = leftLeg;
   portEXIT_CRITICAL(&leftMux);
 
-  char json[768];
+  char json[896];
   snprintf(json, sizeof(json),
     "{\"leftDistance\":%.2f,\"leftVelocity\":%.2f,\"leftPWM\":%.0f,"
     "\"leftPitch\":%.2f,\"leftRoll\":%.2f,\"leftBattery\":%.0f,\"leftThermal\":%.2f,"
+    "\"leftThermalPeak\":%.2f,\"leftStall\":%s,\"leftPackPercent\":%.0f,"
+    "\"leftCurrentA\":%.2f,"
     "\"rightDistance\":%.2f,\"rightVelocity\":%.2f,\"rightPWM\":%d,"
     "\"rightPitch\":%.2f,\"rightRoll\":%.2f,\"battery\":%d,"
     "\"motorEnabled\":%s,\"assistStrength\":%d,\"sensitivity\":%d,"
     "\"leftOnline\":%s,\"tofOk\":%s,\"tofTarget\":%s,\"thermal\":%.2f,"
+    "\"thermalPeak\":%.2f,\"stall\":%s,\"packPercent\":%d,\"currentA\":%.2f,"
     "\"uptimeMs\":%lu}",
     l.distance, l.velocity, l.pwm, l.pitch, l.roll, l.battery, l.thermal,
+    l.thermalPeak, l.stall ? "true" : "false", l.packPercent, l.currentA,
     filteredDistance, velocity, (int)smoothedPWM, pitch, roll, batteryPercent,
     motorEnabled ? "true" : "false", (int)assistStrength, (int)sensitivity,
     leftOnline(now) ? "true" : "false", tofHealthy(now) ? "true" : "false",
     tofHasTarget(now) ? "true" : "false", thermalLoad,
+    thermalPeak, stallFault ? "true" : "false", packPercent, motorCurrentA,
     (unsigned long)now);
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
@@ -492,6 +621,8 @@ static void setupRoutes() {
     int v;
     if (!readIntArg("on", 0, 1, v)) return;
     motorEnabled = (v == 1);
+    // Re-enabling is the acknowledgement that clears a latched stall.
+    if (motorEnabled) { stallFault = false; stallSinceMs = 0; }
     if (!motorEnabled) motorOff();
     bumpSettings();
     server.send(200, "text/plain", motorEnabled ? "ENABLED" : "DISABLED");
@@ -559,6 +690,8 @@ void setup() {
   motorOff();
 
   analogSetPinAttenuation(PIN_BATTERY_ADC, ADC_11db);
+  if (PACK_MONITOR_ENABLED)  analogSetPinAttenuation(PIN_PACK_ADC, ADC_11db);
+  if (CURRENT_SENSE_ENABLED) analogSetPinAttenuation(PIN_CURRENT_ADC, ADC_11db);
 
   initMpu();
   I2C_TOF.begin(PIN_TOF_SDA, PIN_TOF_SCL, TOF_I2C_FREQ_HZ);
@@ -583,6 +716,7 @@ void setup() {
   else Serial.println("[WiFi] not connected yet - will keep trying in the background");
 
   updateBattery();
+  updatePack();
 
   // SAFETY: watch the control loop. A wedged I2C bus or a stuck handler would
   // otherwise leave the LEDC channels driving the motor at their last duty
@@ -612,24 +746,35 @@ void loop() {
 
   static uint32_t lastControlMs = 0;
   if (now - lastControlMs >= CONTROL_PERIOD_MS) {
+    // Measured, not assumed - this loop also serves HTTP and OTA.
+    const float dtS = (lastControlMs == 0) ? (CONTROL_PERIOD_MS / 1000.0f)
+                                           : (now - lastControlMs) / 1000.0f;
     lastControlMs = now;
     readTof(now);
-    readMpu();
-    updateMotor(now);
+    readMpu(dtS);
+    updateCurrent();
+    updateMotor(now, dtS);
   }
 
   static uint32_t lastBatteryMs = 0;
   if (now - lastBatteryMs >= 1000) {
     lastBatteryMs = now;
     updateBattery();
+    updatePack();
   }
 
   static uint32_t lastPrintMs = 0;
   if (now - lastPrintMs >= SERIAL_PRINT_PERIOD_MS) {
     lastPrintMs = now;
-    Serial.printf("Distance: %.1f mm | Velocity: %.1f | TargetPWM: %d | SmoothPWM: %d | Motor: %s%s\n",
-                  filteredDistance, velocity, targetPWM, (int)smoothedPWM,
-                  motorEnabled ? "on" : "off", tofHealthy(now) ? "" : " | ToF FAULT");
+    // Calibration aid: load and its peak are what issue #3 needs measured.
+    Serial.printf("D %.0fmm | v %.0fmm/s (%.1f/sample) | tgt %d | pwm %d | "
+                  "load %.2f peak %.2f%s | %s%s%s\n",
+                  filteredDistance, velocityMmS, velocity, targetPWM, (int)smoothedPWM,
+                  thermalLoad, thermalPeak,
+                  CURRENT_SENSE_ENABLED ? "" : " (est)",
+                  motorEnabled ? "on" : "off",
+                  tofHealthy(now) ? "" : " | ToF FAULT",
+                  stallFault ? " | STALL" : "");
   }
 
   esp_task_wdt_reset();

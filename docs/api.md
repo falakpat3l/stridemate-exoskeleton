@@ -40,7 +40,11 @@ The original firmware's key names are unchanged, so older tools keep working. Ad
 |---|---|
 | `tofOk` | The sensor is alive and ranging |
 | `tofTarget` | The sensor is actually seeing something. **Assist requires both.** A live sensor with no target used to be shown as healthy |
-| `thermal` / `leftThermal` | Open-loop motor heat estimate, 0–1. Assist folds back above 0.80 |
+| `thermal` / `leftThermal` | Motor heat estimate, 0–1. Assist folds back above 0.80 |
+| `thermalPeak` | Highest load seen since boot — the number to read when calibrating the thermal constants |
+| `stall` | A stall was detected and the motor is latched off. Always `false` unless `CURRENT_SENSE_ENABLED` |
+| `packPercent` | Motor-pack charge, or `-1` when `PACK_MONITOR_ENABLED` is off |
+| `currentA` | Measured motor current, `0` unless `CURRENT_SENSE_ENABLED` |
 
 ## Left leg: `10.210.60.122`
 
