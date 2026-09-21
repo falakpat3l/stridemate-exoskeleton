@@ -26,10 +26,13 @@ Example `/data` response:
 {
   "leftDistance": 212.40, "leftVelocity": -3.10, "leftPWM": 96,
   "leftPitch": 12.50, "leftRoll": -2.10, "leftBattery": 81, "leftThermal": 0.14,
+  "leftThermalPeak": 0.31, "leftStall": false, "leftPackPercent": -1,
+  "leftCurrentA": 0.00,
   "rightDistance": 198.70, "rightVelocity": 4.20, "rightPWM": 104,
   "rightPitch": 10.90, "rightRoll": 1.40, "battery": 83,
   "motorEnabled": true, "assistStrength": 255, "sensitivity": 1,
   "leftOnline": true, "tofOk": true, "tofTarget": true, "thermal": 0.22,
+  "thermalPeak": 0.38, "stall": false, "packPercent": -1, "currentA": 0.00,
   "uptimeMs": 523410
 }
 ```
@@ -61,6 +64,7 @@ Example `/data` response:
   "distance": 212.40, "velocity": -3.10, "pwm": 96, "pitch": 12.50,
   "roll": -2.10, "battery": 81, "motorEnabled": true, "assistStrength": 255,
   "sensitivity": 1, "tofOk": true, "tofTarget": true, "thermal": 0.18,
+  "thermalPeak": 0.29, "stall": false, "packPercent": -1, "currentA": 0.00,
   "rightLinkOk": true, "uptimeMs": 498120
 }
 ```
