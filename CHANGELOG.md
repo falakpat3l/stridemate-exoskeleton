@@ -97,7 +97,7 @@ First public release.
 - Safety: motor disabled at boot, sensor-stale cut-off, motor off during OTA,
   soft ramp on direction reversal, left leg stops if the right leg goes silent.
 - Password protection for the dashboard, OTA updates and the leg-to-leg link.
-- Documentation, MIT license, GitHub Actions compile check.
+- Documentation, licence, GitHub Actions compile check.
 
 ### Fixed
 - MPU6050 bytes could be combined in the wrong order.

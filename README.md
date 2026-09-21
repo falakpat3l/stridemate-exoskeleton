@@ -107,10 +107,8 @@ needs a separate licence. For one, contact the copyright holder.
 This is not an OSI-approved open-source licence, because no OSI-approved licence
 restricts commercial use.
 
-> This repository was MIT-licensed until 20 September 2026. That grant cannot be
-> withdrawn, so tag **`v1.0.0`** (commit `2438bf3`) remains available under MIT to
-> anyone who wants permissive terms. `original/` is B Dileep Kumar's work and his copyright.
-> [NOTICE.md](NOTICE.md) has the details and records what is still outstanding.
+> `original/` is B Dileep Kumar's work and his copyright. [NOTICE.md](NOTICE.md)
+> records what is still outstanding on that.
 
 Mechanical CAD lives in [Stridemate_3D_IITH](https://github.com/falakpat3l/Stridemate_3D_IITH)
 under CC BY-NC-SA 4.0.
