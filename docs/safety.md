@@ -1,6 +1,6 @@
 # Safety
 
-StrideMate is a **research prototype**. It hasn't been clinically validated and isn't a certified medical device. Motors strong enough to move a leg can also injure one. Anyone using this code does so at their own risk (see the [license](../LICENSE)).
+StrideMate is a **research prototype**. It hasn't been clinically validated and isn't a certified medical device. Motors strong enough to move a leg can also injure one. Anyone using this code does so at their own risk (see the [licence](../LICENSE.md)).
 
 ## Built-in safety behaviour
 

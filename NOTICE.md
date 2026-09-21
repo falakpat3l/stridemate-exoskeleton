@@ -8,7 +8,11 @@ relicensed to the **PolyForm Noncommercial License 1.0.0** on 20 September 2026.
 An MIT grant cannot be withdrawn. Anyone who obtained release **v1.0.0** while it
 was MIT-licensed keeps MIT rights to *that* version permanently, including for
 commercial use. The PolyForm licence governs this version and everything after
-it. If you need permissive terms, v1.0.0 remains available under MIT.
+it.
+
+If you need permissive terms, that version is commit
+[`2438bf3`](https://github.com/falakpat3l/stridemate-exoskeleton/commit/2438bf3),
+tagged `v1.0.0`, and it remains available under MIT.
 
 ## Third-party code
 
