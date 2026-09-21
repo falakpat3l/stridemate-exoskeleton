@@ -98,9 +98,13 @@ instrument it first appears. But it is convex rather than proportional, and its
 behaviour still moves with the sensor's sample period.
 
 `ASSIST_CURVE_MODE 1` measures velocity in mm/s against the real sample
-interval and responds linearly, which removes both problems. It is **not** the
-default, because switching changes what the Sensitivity slider means and needs
-re-tuning on the bench. This is an open design decision, not a defect.
+interval and responds linearly, which removes both problems. **It is the
+default as of v1.3.0.**
+
+> **This changed motor behaviour and nobody has tested it on hardware.**
+> Sensitivity now means mm/s, not mm per sample, so it needs re-tuning on the
+> bench. If you want the original prototype's curve back, exactly, set
+> `ASSIST_CURVE_MODE` to `0` — it is still there.
 
 ---
 
@@ -115,6 +119,20 @@ re-tuning on the bench. This is an open design decision, not a defect.
    that cannot be closed from a keyboard.
 
 ---
+
+## Who continues this
+
+The hardware is at **IIT Hyderabad**, with **B Dileep Kumar**
+([@Dileep195](https://github.com/Dileep195)). Falak no longer has the device.
+
+That is why the issues labelled `needs-bench-test` and `hardware` are still
+open. They cannot be closed from a keyboard. The software half of each is
+finished and ships disabled — what remains is wiring, measuring and flashing,
+and only someone holding the device can do it.
+
+Anyone who carries the work forward from there is doing their own work on it
+and holds the copyright in what they write. `NOTICE.md` records the licence
+position as it currently stands.
 
 ## Provenance
 

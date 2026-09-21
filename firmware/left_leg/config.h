@@ -138,10 +138,14 @@
 //     TOF_TIMING_BUDGET_MS at all. Duty rises across the whole speed range
 //     up to ASSIST_SPEED_FULL_MMS instead of saturating immediately.
 //
-// Mode 0 is the default: behaviour is unchanged until someone deliberately
-// switches. Mode 1 needs Sensitivity re-tuned on the bench, because its
-// units change from mm/sample to mm/s.
-#define ASSIST_CURVE_MODE        0
+// Mode 1 is the DEFAULT as of v1.3.0. The decision recorded in issue #7 was
+// made: assist should scale with leg speed, evenly, and should not shift when
+// the sensor's timing budget changes.
+//
+// !! THIS CHANGES MOTOR BEHAVIOUR AND HAS NOT BEEN TESTED ON HARDWARE !!
+// Sensitivity now means mm/s, not mm per sample, so it needs re-tuning on the
+// bench. Set this back to 0 to get the original prototype's curve exactly.
+#define ASSIST_CURVE_MODE        1
 
 // PROPORTIONAL mode only.
 #define ASSIST_SPEED_FULL_MMS    600.0f  // speed at which assist reaches max

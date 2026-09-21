@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0] - 2026-09-21
+
+### Changed
+- **The assist curve is now proportional by default** (`ASSIST_CURVE_MODE 1`),
+  settling the decision recorded in issue #7.
+
+  The old curve reached its 255 ceiling at about 17 mm per sensor reading and
+  gave full power beyond that - a switch rather than a dial. It also shifted
+  whenever the sensor's timing budget changed. Mode 1 measures speed in mm/s
+  against the real interval between readings and rises evenly across the
+  range, so neither is true any more.
+
+  **This changes motor behaviour and has not been tested on hardware.**
+  Sensitivity now means mm/s rather than mm per sample, so it needs re-tuning
+  on the bench. `ASSIST_CURVE_MODE 0` restores the original curve exactly.
+
+### Added
+- A "Who continues this" section in the README and in
+  BEFORE-YOU-FLASH-THIS.md, recording that the hardware is at IIT Hyderabad
+  with B Dileep Kumar, that the `needs-bench-test` and `hardware` issues stay
+  open for that reason, and that whoever carries the work forward holds the
+  copyright in what they write.
+
 ## [1.2.0] - 2026-09-21
 
 Completes the software side of the open hardware issues, so the remaining
