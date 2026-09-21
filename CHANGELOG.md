@@ -8,6 +8,12 @@ work on a real device is wiring and confirming rather than designing.
 device until someone deliberately enables it.
 
 ### Added
+- `BEFORE-YOU-FLASH-THIS.md`: an orientation document for whoever picks this
+  up next, stating plainly what is measured, what is guessed and what has
+  never been switched on. Linked from the README warning.
+- Dashboard rows for motor-pack charge, peak thermal load and measured motor
+  current, plus an unmissable banner when a stall has latched a motor off and
+  how to clear it. The right leg relays the left leg's versions of all four.
 - `ASSIST_CURVE_MODE`. Mode 0 is the existing per-sample curve; mode 1 is
   proportional in mm/s, measured against the real interval between valid
   samples, so the tuning no longer depends on `TOF_TIMING_BUDGET_MS`.

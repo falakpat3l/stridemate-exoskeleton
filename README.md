@@ -5,7 +5,11 @@
 StrideMate is a wearable lower-limb exoskeleton prototype that helps with walking. Each leg has its own **ESP32** with a distance sensor, a motion sensor and a motor. The two boards talk over Wi-Fi, and a phone dashboard shows live data and lets you set how much the motors help.
 
 > [!WARNING]
-> **Research prototype, not a medical device.** It hasn't been clinically validated or certified. Read [docs/safety.md](docs/safety.md) before powering the motors, and never test it on a person without supervision.
+> **Research prototype, not a medical device.** It hasn't been clinically validated or certified. Never test it on a person without supervision.
+>
+> ### 👉 If you are about to work on this, read **[BEFORE-YOU-FLASH-THIS.md](BEFORE-YOU-FLASH-THIS.md)** first.
+>
+> It is the honest state of the project: what is measured, what is guessed, and what has never been switched on. Then [docs/safety.md](docs/safety.md) before powering the motors.
 
 ## Highlights
 

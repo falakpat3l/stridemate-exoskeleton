@@ -94,6 +94,8 @@ volatile uint32_t settingsVersion = 1;   // bumped on every change
 // ---------------------------------------------------------------------
 struct LegTelemetry {
   float distance = 0, velocity = 0, pwm = 0, pitch = 0, roll = 0, battery = 0, thermal = 0;
+  float thermalPeak = 0, packPercent = -1, currentA = 0;
+  bool  stall = false;
 };
 LegTelemetry leftLeg;
 uint32_t     leftLastOkMs = 0;           // 0 = never received
@@ -140,6 +142,18 @@ static bool jsonNumber(const String& json, const char* key, float& out) {
   return true;
 }
 
+// Finds "key": true|false in a flat JSON string. Our own generator emits no
+// whitespace after the colon, so the first character decides it.
+static bool jsonBool(const String& json, const char* key, bool& out) {
+  String needle = String("\"") + key + "\"";
+  int k = json.indexOf(needle);
+  if (k < 0) return false;
+  int colon = json.indexOf(':', k + needle.length());
+  if (colon < 0) return false;
+  out = (json.charAt(colon + 1) == 't');
+  return true;
+}
+
 static bool leftOnline(uint32_t now) {
   uint32_t last;
   portENTER_CRITICAL(&leftMux);
@@ -179,7 +193,11 @@ static bool fetchLeftLeg() {
       jsonNumber(payload, "pitch",    t.pitch);
       jsonNumber(payload, "roll",     t.roll);
       jsonNumber(payload, "battery",  t.battery);
-      jsonNumber(payload, "thermal",  t.thermal);
+      jsonNumber(payload, "thermal",     t.thermal);
+      jsonNumber(payload, "thermalPeak", t.thermalPeak);
+      jsonNumber(payload, "packPercent", t.packPercent);
+      jsonNumber(payload, "currentA",    t.currentA);
+      jsonBool  (payload, "stall",       t.stall);
       ok = true;
     } else {
       // Fallback for the original left-leg firmware: first value = distance.
@@ -542,6 +560,8 @@ static void handleData() {
   snprintf(json, sizeof(json),
     "{\"leftDistance\":%.2f,\"leftVelocity\":%.2f,\"leftPWM\":%.0f,"
     "\"leftPitch\":%.2f,\"leftRoll\":%.2f,\"leftBattery\":%.0f,\"leftThermal\":%.2f,"
+    "\"leftThermalPeak\":%.2f,\"leftStall\":%s,\"leftPackPercent\":%.0f,"
+    "\"leftCurrentA\":%.2f,"
     "\"rightDistance\":%.2f,\"rightVelocity\":%.2f,\"rightPWM\":%d,"
     "\"rightPitch\":%.2f,\"rightRoll\":%.2f,\"battery\":%d,"
     "\"motorEnabled\":%s,\"assistStrength\":%d,\"sensitivity\":%d,"
@@ -549,6 +569,7 @@ static void handleData() {
     "\"thermalPeak\":%.2f,\"stall\":%s,\"packPercent\":%d,\"currentA\":%.2f,"
     "\"uptimeMs\":%lu}",
     l.distance, l.velocity, l.pwm, l.pitch, l.roll, l.battery, l.thermal,
+    l.thermalPeak, l.stall ? "true" : "false", l.packPercent, l.currentA,
     filteredDistance, velocity, (int)smoothedPWM, pitch, roll, batteryPercent,
     motorEnabled ? "true" : "false", (int)assistStrength, (int)sensitivity,
     leftOnline(now) ? "true" : "false", tofHealthy(now) ? "true" : "false",
