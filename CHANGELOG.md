@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.2.0] - 2026-09-21
+
+Completes the software side of the open hardware issues, so the remaining
+work on a real device is wiring and confirming rather than designing.
+**Everything hardware-dependent ships disabled**, so nothing changes on a
+device until someone deliberately enables it.
+
+### Added
+- `ASSIST_CURVE_MODE`. Mode 0 is the existing per-sample curve; mode 1 is
+  proportional in mm/s, measured against the real interval between valid
+  samples, so the tuning no longer depends on `TOF_TIMING_BUDGET_MS`.
+  Default 0. Mode 1 needs Sensitivity re-tuned - its units change.
+- Motor current sensing on the BTS7960 `IS` pin (`CURRENT_SENSE_ENABLED`).
+  When on, the thermal model integrates real I2t instead of duty^2, and a
+  stalled motor is detected and latched off rather than inferred.
+- Motor-pack voltage monitoring on a second divider
+  (`PACK_MONITOR_ENABLED`), so the dashboard can show the 12 V pack and not
+  only the logic supply.
+- `thermalPeak` and a calibration line on serial, so a bench session
+  produces the numbers the thermal constants need.
+- Telemetry: `thermalPeak`, `stall`, `packPercent`, `currentA`.
+
+### Fixed
+- The thermal model integrated over a fixed `CONTROL_PERIOD_MS`. The same
+  loop serves HTTP and OTA, so the real interval is longer whenever it is
+  busy and the heat estimate read low. It now uses measured elapsed time.
+- The MPU6050's gyro was read and discarded, leaving tilt from the
+  accelerometer alone - noisiest exactly while walking, which is when it is
+  being looked at. Added a complementary filter (`USE_GYRO_FUSION`).
+
+### Changed
+- Corrected the assist-curve documentation. Pinning `TOF_TIMING_BUDGET_MS`
+  at 33 ms in 1.1.0 already moved the saturation point to about 515 mm/s.
+  The earlier "bang-bang" description overstated what was left: the
+  remaining issues are the curve's convex shape and its dependence on the
+  sample period, which is what mode 1 addresses.
+
 ## [1.1.0] - 2026-09-20
 
 Safety and security review of the 1.0.0 firmware. The assist algorithm and its

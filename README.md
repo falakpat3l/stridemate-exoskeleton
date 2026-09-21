@@ -81,7 +81,9 @@ Step-by-step guide: [docs/getting-started.md](docs/getting-started.md).
 - ⚠️ **Left-leg firmware is reconstructed.** The original wasn't available, so it hasn't been tested on hardware yet.
 - ⚠️ The refactored right-leg firmware compiles but hasn't been re-tested on the physical device.
 - ⚠️ Thermal fold-back ships **off** (`THERMAL_PROTECTION false`): the constants are simulated, not measured. The load estimate still runs and shows on the dashboard so you can calibrate it — see [docs/safety.md](docs/safety.md).
-- 🔜 Possible next steps: wire the BTS7960 current-sense pins for real stall detection, fuse gyro and accelerometer data for better tilt estimates, detect gait phases, log sessions.
+- ✅ Gyro and accelerometer fused for tilt (`USE_GYRO_FUSION`).
+- ✅ Firmware support written for motor current sensing and motor-pack voltage — both ship disabled, waiting on the wiring. See the open issues.
+- 🔜 Possible next steps: detect gait phases, log sessions, settle `ASSIST_CURVE_MODE`.
 
 ## Team
 

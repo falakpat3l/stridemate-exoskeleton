@@ -16,6 +16,7 @@ StrideMate is a **research prototype**. It hasn't been clinically validated and 
 | I²C buses time out rather than stalling the control loop | ✅ | ✅ |
 | Watchdog resets the board if `loop()` stalls for 1 s | ✅ | ✅ |
 | Assist folds back on the open-loop motor heat estimate | opt-in (`THERMAL_PROTECTION`, off) | opt-in (`THERMAL_PROTECTION`, off) |
+| Stall detection — current drawn while the leg is not moving | opt-in (`CURRENT_SENSE_ENABLED`, off) | opt-in (`CURRENT_SENSE_ENABLED`, off) |
 | Motor off while a wireless (OTA) firmware update is flashing | ✅ | ✅ |
 | Soft restart when the motor reverses direction | ✅ | ✅ |
 | Motor off if the other leg goes silent for 1 s | optional (`STOP_MOTOR_IF_LEFT_OFFLINE`) | ✅ (`STOP_MOTOR_IF_RIGHT_SILENT`) |
@@ -26,7 +27,8 @@ StrideMate is a **research prototype**. It hasn't been clinically validated and 
 
 - **A physical emergency cut-off** that removes motor power. Add a switch you can reach easily. The firmware now drops the H-bridge enables as well as the PWM, but that is still software deciding to stop.
 - **Mechanical end-stops** that limit joint travel to a safe range.
-- **Real current or temperature measurement.** See the thermal section below — what the firmware has is an estimate, not a measurement.
+- **Real current or temperature measurement** *until the IS pin is wired*. The firmware side is now ready: set `CURRENT_SENSE_ENABLED` and the thermal model switches from estimating duty² to integrating real I²t, and stall detection starts working. Until then it is an estimate.
+- **Stall detection** for the same reason. Once enabled, a motor drawing more than `CURRENT_STALL_A` while the leg has not moved `CURRENT_STALL_MOTION_MM` for `CURRENT_STALL_MS` latches the motor off. The latch clears only when the motor is re-enabled from the dashboard, so it must be acknowledged rather than quietly resetting.
 - **Wi-Fi loss on the right leg** doesn't stop the right motor by itself. Use the physical switch.
 
 ## Motor heating
