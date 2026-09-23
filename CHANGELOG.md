@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Wireless (OTA) updates no longer reboot the board part-way through.**
+  The control-loop watchdog added in 1.1 has a 1 s timeout, but an OTA
+  upload runs for several seconds inside `ArduinoOTA.handle()` without
+  feeding it. Both legs now unsubscribe the loop from the watchdog once the
+  motor is off and the H-bridge disabled, and re-subscribe if the upload
+  fails. Untested on hardware.
+- **The dashboard now says when STOP or Enable/Disable did not go through.**
+  Previously a rejected request (for example HTTP 401 or 403) still showed
+  the motor as stopped, and a network failure showed nothing at all.
+
 ## [1.3.0] - 2026-09-21
 
 ### Changed
