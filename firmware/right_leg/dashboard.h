@@ -194,8 +194,9 @@ async function poll() {
     // SAFETY: a latched stall has stopped the motor. Say so unmissably, and
     // say how to clear it - re-enabling is the acknowledgement.
     const rs = !!d.stall, ls = d.leftOnline && !!d.leftStall;
-    $('stallBar').classList.toggle('hidden', !(rs || ls));
-    if (rs || ls) {
+    const cmdErr = Date.now() < cmdErrorUntil;   // keep a failed-command warning up
+    if (!cmdErr) $('stallBar').classList.toggle('hidden', !(rs || ls));
+    if ((rs || ls) && !cmdErr) {
       $('stallBar').textContent = 'STALL - ' +
         (rs && ls ? 'both legs' : rs ? 'right leg' : 'left leg') +
         ' latched off. Clear the obstruction, then tap Enable motor.';
@@ -234,11 +235,29 @@ $('assistSlider').addEventListener('input', function () {
 $('sensitivitySlider').addEventListener('input', function () {
   $('sensVal').textContent = this.value; sendSens(this.value);
 });
+// SAFETY: fetch() only throws on a network failure; a 401/403/500 still
+// "succeeds". Only show the new state once the board has confirmed it, and
+// make a failed command impossible to miss - above all a failed STOP.
+let cmdErrorUntil = 0;
+function cmdFailed(what, why) {
+  cmdErrorUntil = Date.now() + 8000;
+  $('stallBar').textContent = what + ' FAILED (' + why + '). The motor state has NOT changed.';
+  $('stallBar').classList.remove('hidden');
+}
 async function stopAll() {
-  try { await fetch('/stop', { method: 'POST' }); setMotorUi(false); } catch (e) {}
+  try {
+    const r = await fetch('/stop', { method: 'POST' });
+    if (!r.ok) return cmdFailed('STOP', 'HTTP ' + r.status);
+    setMotorUi(false);
+  } catch (e) { cmdFailed('STOP', 'no connection'); }
 }
 async function setMotor(on) {
-  try { await fetch('/motor?on=' + (on ? 1 : 0), { method: 'POST' }); setMotorUi(on); } catch (e) {}
+  const what = on ? 'Enable motor' : 'Disable motor';
+  try {
+    const r = await fetch('/motor?on=' + (on ? 1 : 0), { method: 'POST' });
+    if (!r.ok) return cmdFailed(what, 'HTTP ' + r.status);
+    setMotorUi(on);
+  } catch (e) { cmdFailed(what, 'no connection'); }
 }
 
 drawChart();

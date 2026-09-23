@@ -654,9 +654,17 @@ static void startNetworkServices() {
     otaInProgress = true;                         // motors off while flashing
     motorOff();
     bumpSettings();
+    // The upload runs inside ArduinoOTA.handle() for several seconds and
+    // never feeds the task watchdog, so the 1 s control-loop watchdog
+    // rebooted the board part-way through every wireless update. The
+    // watchdog guards against the motor being driven by a wedged loop;
+    // with the H-bridge disabled above there is nothing to guard, so
+    // unsubscribe for the upload. Success reboots; failure re-subscribes.
+    esp_task_wdt_delete(NULL);
     Serial.println("[OTA] update started - motor disabled");
   });
   ArduinoOTA.onError([](ota_error_t e) {
+    esp_task_wdt_add(NULL);                       // watch the loop again
     otaInProgress = false;
     Serial.printf("[OTA] error %u\n", e);
   });
