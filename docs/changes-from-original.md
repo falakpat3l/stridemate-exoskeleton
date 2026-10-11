@@ -1,7 +1,7 @@
 # Changes from the original prototype firmware
 
 > A later safety and security review made further changes on top of everything
-> below — sensor-gap re-seeding, a velocity clamp, H-bridge enables dropped on
+> below: sensor-gap re-seeding, a velocity clamp, H-bridge enables dropped on
 > stop, I²C timeouts, a control-loop watchdog, open-loop thermal fold-back, and
 > POST + same-origin on the control endpoints. Those are listed in
 > [CHANGELOG.md](../CHANGELOG.md) under 1.1.0 and explained in

@@ -18,7 +18,7 @@ On GitHub, click **Code → Download ZIP** and unzip it, or use `git clone`.
 
 Then read **[../BEFORE-YOU-FLASH-THIS.md](../BEFORE-YOU-FLASH-THIS.md)**. It is
 short, and it says which parts of this project have never been tested on real
-hardware — worth knowing before you power anything.
+hardware, worth knowing before you power anything.
 
 ## 3. Add your private settings
 
@@ -78,5 +78,5 @@ Once a board is on Wi-Fi, it shows up under **Tools → Port** as `stridemate-ri
 | Serial Monitor shows dots forever | Wrong Wi-Fi name/password, or the IP settings don't match the network |
 | Dashboard shows LEFT LEG *offline* | Left board is off, on another network, or has a different IP |
 | Motor never moves | Motor not enabled on the dashboard, sensor fault, no target in view, distance outside 50–450 mm, or movement below the sensitivity threshold |
-| Red **STALL** banner, motor dead | A stall was detected and the motor is latched off. Clear the obstruction, then tap **Enable motor** — re-enabling is what clears the latch |
+| Red **STALL** banner, motor dead | A stall was detected and the motor is latched off. Clear the obstruction, then tap **Enable motor**: re-enabling is what clears the latch |
 | Battery or current reads *not wired* | Normal. Those sensors ship disabled; see `PACK_MONITOR_ENABLED` and `CURRENT_SENSE_ENABLED` |

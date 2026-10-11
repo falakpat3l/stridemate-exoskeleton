@@ -20,6 +20,11 @@
 //  See docs/changes-from-original.md for what was changed and why.
 // =====================================================================
 
+// HOW TO READ THIS FILE
+//   Start with setup() and loop() at the bottom. loop() calls readTof(),
+//   readMpu() and updateMotor() every 10 ms, and updateMotor() is where the
+//   motor power is decided. Every number you might want to tune is in
+//   config.h, not here.
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
@@ -106,11 +111,14 @@ bool networkStarted = false;
 // =====================================================================
 //  Small helpers
 // =====================================================================
+// Sends power to the motor, 0..255. Only one side is ever above 0:
+// forwardDuty turns it one way, reverseDuty the other.
 static void writeMotor(int forwardDuty, int reverseDuty) {
   ledcWrite(PIN_MOTOR_RPWM, forwardDuty);
   ledcWrite(PIN_MOTOR_LPWM, reverseDuty);
 }
 
+// setBridge(): switches the motor driver chip itself on or off.
 // SAFETY: the H-bridge enable pins are the one path that removes drive
 // independently of the PWM peripheral. Previously they were driven HIGH once
 // in setup() and never touched, so every "off" in the firmware relied on the
@@ -122,6 +130,7 @@ static void setBridge(bool on) {
   bridgeEnabled = on;
 }
 
+// Stops the motor at once and resets the ramp to 0.
 static void motorOff() {
   writeMotor(0, 0);
   setBridge(false);           // remove drive entirely; the motor coasts
@@ -177,6 +186,7 @@ static bool tofHasTarget(uint32_t now) {
 // =====================================================================
 //  Left-leg link (runs on core 0, separate from the control loop)
 // =====================================================================
+// Asks the left leg for its latest numbers (GET /data) and stores them.
 static bool fetchLeftLeg() {
   HTTPClient http;
   http.setConnectTimeout(LEFT_HTTP_TIMEOUT_MS);
@@ -216,6 +226,7 @@ static bool fetchLeftLeg() {
   return ok;
 }
 
+// Sends the dashboard settings (assist, sensitivity, motor on/off) to the left leg.
 static bool sendSettingsToLeftLeg() {
   bool motor = motorEnabled && !otaInProgress;
   String url = String("http://") + LEFT_LEG_HOST + "/set?key=" + LINK_KEY +
@@ -231,6 +242,9 @@ static bool sendSettingsToLeftLeg() {
   return ok;
 }
 
+// Background loop on the ESP32's second core. Every 100 ms: fetch the left
+// leg's data, and send settings when they change. It runs separately so a
+// slow or missing left leg can never delay motor control.
 static void leftLinkTask(void*) {
   uint32_t sentVersion = 0;
   uint32_t lastSettingsSendMs = 0;
@@ -255,6 +269,7 @@ static void leftLinkTask(void*) {
 // =====================================================================
 //  Sensors
 // =====================================================================
+// Starts the distance sensor. If it fails, readTof() retries every 2 s.
 static void initTof() {
   tofLastInitTry = millis();
   tofInitialised = false;
@@ -273,6 +288,11 @@ static void initTof() {
   Serial.println("[ToF] VL53L1X ready");
 }
 
+// Reads the distance sensor and works out how fast the leg is moving.
+//   1. No new reading yet? Do nothing.
+//   2. Reading says "no target"? Speed = 0, so the motor will not help.
+//   3. First reading after a gap? Start fresh from it (speed = 0).
+//   4. Otherwise smooth the reading, and speed = change since last time.
 static void readTof(uint32_t now) {
   if (!tofInitialised) {
     if (now - tofLastInitTry > 2000) initTof();   // keep retrying
@@ -319,6 +339,7 @@ static void readTof(uint32_t now) {
   tofLastValidMs   = now;
 }
 
+// Reads one 16-bit number (two bytes) from the motion sensor.
 static int16_t read16(TwoWire& bus) {
   // Read high byte THEN low byte (explicit order - see changes doc).
   uint8_t hi = bus.read();
@@ -326,6 +347,8 @@ static int16_t read16(TwoWire& bus) {
   return (int16_t)((hi << 8) | lo);
 }
 
+// Reads the motion sensor (MPU6050) and works out tilt in degrees.
+// Tilt is only shown on the dashboard. It does not change the motor.
 static void readMpu(float dtS) {
   I2C_MPU.beginTransmission(MPU_I2C_ADDR);
   I2C_MPU.write(0x3B);                            // ACCEL_XOUT_H
@@ -363,6 +386,7 @@ static void readMpu(float dtS) {
   }
 }
 
+// Wakes up the motion sensor (it starts in sleep mode).
 static void initMpu() {
   I2C_MPU.begin(PIN_MPU_SDA, PIN_MPU_SCL, MPU_I2C_FREQ_HZ);
   I2C_MPU.setTimeOut(MPU_I2C_TIMEOUT_MS);         // never block the control loop
@@ -374,6 +398,7 @@ static void initMpu() {
   }
 }
 
+// Logic battery: average 8 readings, turn them into volts, then 0-100%.
 static void updateBattery() {
   uint32_t mv = 0;
   for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_BATTERY_ADC);
@@ -407,6 +432,8 @@ static void updateCurrent() {
 // =====================================================================
 //  Motor thermal budget (open loop - no current sensor on this build)
 // =====================================================================
+// Estimates how hot the motor is. Each step adds heat for the power used
+// and lets some heat escape. 1.0 means "at the limit".
 static void updateThermal(float duty, float dtS) {
   // dtS is MEASURED, not assumed. The control loop runs at best effort, so
   // whenever the loop is busy the real interval is longer than
@@ -433,7 +460,18 @@ static float thermalHeadroom() {
 // =====================================================================
 //  Assist control
 // =====================================================================
+// THE MAIN CONTROL STEP: decides how hard to drive the motor, every 10 ms.
+//   1. Safety check. If anything is wrong, switch off and stop here.
+//   2. Work out the power the leg's speed asks for (0 if too slow, or if the
+//      leg is too near or too far), capped at Assist Strength.
+//   3. Lower that cap if the motor is hot (only with THERMAL_PROTECTION on).
+//   4. Pick the direction from which way the leg moves. If it just flipped,
+//      pause for one step.
+//   5. Ramp smoothly toward the target power and drive the motor.
+//   6. Stall check (only with a current sensor): power flowing but the leg
+//      not moving means something is stuck, so stop and stay stopped.
 static void updateMotor(uint32_t now, float dtS) {
+  // 1. Safety check
   bool allowed = motorEnabled && !otaInProgress && tofHealthy(now) && tofHasTarget(now)
                  && !stallFault;
   if (STOP_MOTOR_IF_LEFT_OFFLINE && !leftOnline(now)) allowed = false;
@@ -448,6 +486,7 @@ static void updateMotor(uint32_t now, float dtS) {
 
   setBridge(true);                                // assist allowed: power the bridge
 
+  // 2. How much help does the leg's speed ask for?
   const int sens = sensitivity;
 
 #if ASSIST_CURVE_MODE == 0
@@ -478,11 +517,13 @@ static void updateMotor(uint32_t now, float dtS) {
     targetPWM = 0;
   }
 
+  // 3. Heat limit
   // THERMAL: cap the assist ceiling by the remaining heat budget.
   int maxDuty = PWM_MIN_ASSIST +
                 (int)((assistStrength - PWM_MIN_ASSIST) * thermalHeadroom());
   if (targetPWM > maxDuty) targetPWM = maxDuty;
 
+  // 4. Direction: +1, -1 or 0 (MOTOR_DIRECTION_SIGN flips it if the motor is wired backwards)
   int direction = ((vSigned > dead) ? 1 : (vSigned < -dead) ? -1 : 0) * MOTOR_DIRECTION_SIGN;
 
   if (RESET_RAMP_ON_REVERSAL && direction != 0 && lastDirection != 0 && direction != lastDirection) {
@@ -494,6 +535,7 @@ static void updateMotor(uint32_t now, float dtS) {
   }
   if (direction != 0) lastDirection = direction;
 
+  // 5. Ramp smoothly toward the target, then drive the motor
   smoothedPWM = PWM_ALPHA * targetPWM + (1.0f - PWM_ALPHA) * smoothedPWM;
   smoothedPWM = constrain(smoothedPWM, 0.0f, 255.0f);
 
@@ -503,6 +545,7 @@ static void updateMotor(uint32_t now, float dtS) {
 
   updateThermal(direction != 0 ? smoothedPWM : 0, dtS);
 
+  // 6. Stall check
   // SAFETY: a stall is current flowing while the leg is not actually moving.
   // Inert until CURRENT_SENSE_ENABLED - without a sensor there is nothing to
   // detect it with, which is the whole point of wiring the IS pin.
@@ -526,6 +569,7 @@ static void updateMotor(uint32_t now, float dtS) {
 // =====================================================================
 static const char* COLLECTED_HEADERS[] = { "Origin" };
 
+// Asks for the dashboard username and password (skipped if no password is set).
 static bool checkAuth() {
   if (strlen(DASHBOARD_PASSWORD) == 0) return true;
   if (server.authenticate(DASHBOARD_USER, DASHBOARD_PASSWORD)) return true;
@@ -548,6 +592,8 @@ static bool sameOrigin() {
   return false;
 }
 
+// GET /data: every live number for both legs as JSON. The dashboard and
+// exo-telemetry-tunnel read this.
 static void handleData() {
   if (!checkAuth()) return;
   uint32_t now = millis();
@@ -580,6 +626,7 @@ static void handleData() {
   server.send(200, "application/json", json);
 }
 
+// Reads a whole-number setting from the request and keeps it between lo and hi.
 static bool readIntArg(const char* name, int lo, int hi, int& out) {
   if (!server.hasArg(name)) {
     server.send(400, "text/plain", String("missing '") + name + "'");
@@ -589,6 +636,7 @@ static bool readIntArg(const char* name, int lo, int hi, int& out) {
   return true;
 }
 
+// The web addresses this board answers, and what each one does.
 static void setupRoutes() {
   server.on("/", HTTP_GET, []() {
     if (!checkAuth()) return;
@@ -647,6 +695,7 @@ static void setupRoutes() {
   server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
 }
 
+// Runs once Wi-Fi connects: starts wireless updates (OTA) and the web server.
 static void startNetworkServices() {
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -682,6 +731,8 @@ static void startNetworkServices() {
 // =====================================================================
 //  Setup & loop
 // =====================================================================
+// Runs once at power-on: motor off first, then sensors, Wi-Fi, and the
+// watchdog (which reboots the board if loop() ever gets stuck).
 void setup() {
   Serial.begin(SERIAL_BAUD);
   delay(200);
@@ -743,6 +794,9 @@ void setup() {
   xTaskCreatePinnedToCore(leftLinkTask, "leftLink", 8192, nullptr, 1, nullptr, 0);
 }
 
+// Runs forever. Each pass: answer web requests. Every 10 ms: read sensors
+// and run the control step. Every second: read the batteries. Now and then:
+// print a status line to the Serial Monitor.
 void loop() {
   uint32_t now = millis();
 
