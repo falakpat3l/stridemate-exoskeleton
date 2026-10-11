@@ -11,6 +11,8 @@ StrideMate is a wearable lower-limb exoskeleton prototype that helps with walkin
 >
 > It is the honest state of the project: what is measured, what is guessed, and what has never been switched on. Then [docs/safety.md](docs/safety.md) before powering the motors.
 
+**New to the code?** Start with [GUIDE.md](GUIDE.md), a plain-English tour of how it works and where to make changes.
+
 ## Highlights
 
 | | |
@@ -84,9 +86,9 @@ Step-by-step guide: [docs/getting-started.md](docs/getting-started.md).
 - ✅ Safety and security review applied: sensor-gap re-seeding, velocity clamp, H-bridge enables dropped on stop, I²C timeouts, control-loop watchdog, POST + same-origin on control endpoints.
 - ⚠️ **Left-leg firmware is reconstructed.** The original wasn't available, so it hasn't been tested on hardware yet.
 - ⚠️ The refactored right-leg firmware compiles but hasn't been re-tested on the physical device.
-- ⚠️ Thermal fold-back ships **off** (`THERMAL_PROTECTION false`): the constants are simulated, not measured. The load estimate still runs and shows on the dashboard so you can calibrate it — see [docs/safety.md](docs/safety.md).
+- ⚠️ Thermal fold-back ships **off** (`THERMAL_PROTECTION false`): the constants are simulated, not measured. The load estimate still runs and shows on the dashboard so you can calibrate it. See [docs/safety.md](docs/safety.md).
 - ✅ Gyro and accelerometer fused for tilt (`USE_GYRO_FUSION`).
-- ✅ Firmware support written for motor current sensing and motor-pack voltage — both ship disabled, waiting on the wiring. See the open issues.
+- ✅ Firmware support written for motor current sensing and motor-pack voltage. Both ship disabled, waiting on the wiring. See the open issues.
 - 🔜 Possible next steps: detect gait phases, log sessions, settle `ASSIST_CURVE_MODE`.
 
 ## Who continues this

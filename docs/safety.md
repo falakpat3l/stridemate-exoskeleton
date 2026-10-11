@@ -16,7 +16,7 @@ StrideMate is a **research prototype**. It hasn't been clinically validated and 
 | I²C buses time out rather than stalling the control loop | ✅ | ✅ |
 | Watchdog resets the board if `loop()` stalls for 1 s | ✅ | ✅ |
 | Assist folds back on the open-loop motor heat estimate | opt-in (`THERMAL_PROTECTION`, off) | opt-in (`THERMAL_PROTECTION`, off) |
-| Stall detection — current drawn while the leg is not moving | opt-in (`CURRENT_SENSE_ENABLED`, off) | opt-in (`CURRENT_SENSE_ENABLED`, off) |
+| Stall detection: current drawn while the leg is not moving | opt-in (`CURRENT_SENSE_ENABLED`, off) | opt-in (`CURRENT_SENSE_ENABLED`, off) |
 | Motor off while a wireless (OTA) firmware update is flashing | ✅ | ✅ |
 | Soft restart when the motor reverses direction | ✅ | ✅ |
 | Motor off if the other leg goes silent for 1 s | optional (`STOP_MOTOR_IF_LEFT_OFFLINE`) | ✅ (`STOP_MOTOR_IF_RIGHT_SILENT`) |
@@ -33,13 +33,13 @@ StrideMate is a **research prototype**. It hasn't been clinically validated and 
 
 ## Motor heating
 
-The motors are windshield-wiper units: intermittent-duty parts. Nothing on this build measures motor current or temperature, so the firmware keeps an **open-loop estimate** — it integrates duty² and decays it with a 45 s time constant, then folds the assist ceiling back smoothly once the estimate passes 0.80. The dashboard shows the estimate per leg and an **ASSIST REDUCED** badge when fold-back is active.
+The motors are windshield-wiper units: intermittent-duty parts. Nothing on this build measures motor current or temperature, so the firmware keeps an **open-loop estimate**: it integrates duty² and decays it with a 45 s time constant, then folds the assist ceiling back smoothly once the estimate passes 0.80. The dashboard shows the estimate per leg and an **ASSIST REDUCED** badge when fold-back is active.
 
 It folds back rather than cutting out on purpose: losing assist abruptly mid-stride is its own hazard, and reducing duty also reduces heating, so the loop settles.
 
 > **This is off by default** (`THERMAL_PROTECTION false`), because the constants are placeholders from simulation and an untuned fold-back surprising you mid-walk is its own hazard.
 >
-> The estimate still runs and is still shown on the dashboard with protection off — which is how you calibrate it. Walk the device, watch what load your real use produces, then set `THERMAL_FULL_DUTY_S` and `THERMAL_COOL_TAU_S` so normal use stays well under 0.80 and abuse does not. Only then switch `THERMAL_PROTECTION` on. Better still, wire the BTS7960's `R_IS` / `L_IS` current-sense outputs to a spare ADC pin and close the loop on actual current instead of estimating from duty. Until one of those is done, the motor has no thermal protection at all — keep a hand on the cut-off switch.
+> The estimate still runs and is still shown on the dashboard with protection off, which is how you calibrate it. Walk the device, watch what load your real use produces, then set `THERMAL_FULL_DUTY_S` and `THERMAL_COOL_TAU_S` so normal use stays well under 0.80 and abuse does not. Only then switch `THERMAL_PROTECTION` on. Better still, wire the BTS7960's `R_IS` / `L_IS` current-sense outputs to a spare ADC pin and close the loop on actual current instead of estimating from duty. Until one of those is done, the motor has no thermal protection at all, keep a hand on the cut-off switch.
 
 ## Battery reading
 

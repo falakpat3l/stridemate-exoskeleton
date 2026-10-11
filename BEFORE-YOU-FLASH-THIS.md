@@ -1,6 +1,6 @@
 # Before you flash this
 
-> Read this first. It is the honest state of the project — what is measured,
+> Read this first. It is the honest state of the project: what is measured,
 > what is guessed, and what has never been switched on. The other docs tell
 > you how things work; this one tells you what to distrust.
 
@@ -36,7 +36,7 @@ them. Start with `docs/safety.md`.
 
 **The single most important physical test** is in `docs/safety.md` step 6:
 block the distance sensor with your hand for a second, then uncover it. The
-motor must not lurch. That was the worst bug found in review — a re-acquired
+motor must not lurch. That was the worst bug found in review: a re-acquired
 target used to produce a false velocity of about −238 mm/sample and drive the
 motor to 58% duty *in reverse* within two samples. It is fixed in code. It has
 only ever been proven in a simulation.
@@ -56,7 +56,7 @@ anything until you turn it on.
 
 `THERMAL_PROTECTION` is off for a different reason: the constants are
 **simulated, not measured**, and an untuned fold-back reducing assist mid-stride
-is its own hazard. The load estimate still runs with it off — that is how you
+is its own hazard. The load estimate still runs with it off: that is how you
 calibrate. Walk the device, watch the peak figure on the dashboard, set
 `THERMAL_FULL_DUTY_S` and `THERMAL_COOL_TAU_S` so ordinary use sits well under
 0.80, *then* switch it on.
@@ -93,7 +93,7 @@ calibrate. Walk the device, watch the peak figure on the dashboard, set
 
 `duty = 80 + 2.5 × |velocity|^1.5`, clamped at 255, reaches the ceiling at
 about **17 mm per sensor sample**. With the timing budget pinned at 33 ms that
-is roughly 515 mm/s — a brisk leg speed, so the curve is *not* the blunt
+is roughly 515 mm/s, a brisk leg speed, so the curve is *not* the blunt
 instrument it first appears. But it is convex rather than proportional, and its
 behaviour still moves with the sensor's sample period.
 
@@ -104,18 +104,18 @@ default as of v1.3.0.**
 > **This changed motor behaviour and nobody has tested it on hardware.**
 > Sensitivity now means mm/s, not mm per sample, so it needs re-tuning on the
 > bench. If you want the original prototype's curve back, exactly, set
-> `ASSIST_CURVE_MODE` to `0` — it is still there.
+> `ASSIST_CURVE_MODE` to `0`: it is still there.
 
 ---
 
 ## Where to start
 
-1. **`docs/safety.md`** — the first-power-up checklist. Motor disconnected for
+1. **`docs/safety.md`**: the first-power-up checklist. Motor disconnected for
    step 1. Do not skip to step 5.
-2. **`docs/how-it-works.md`** — the control loop and every tunable parameter.
-3. **`docs/hardware.md`** — pin map and wiring, including the two dividers that
+2. **`docs/how-it-works.md`**: the control loop and every tunable parameter.
+3. **`docs/hardware.md`**: pin map and wiring, including the two dividers that
    are not yet fitted.
-4. **The open issues** on GitHub — the `needs-bench-test` label marks everything
+4. **The open issues** on GitHub: the `needs-bench-test` label marks everything
    that cannot be closed from a keyboard.
 
 ---
@@ -127,7 +127,7 @@ The hardware is at **IIT Hyderabad**, with **B Dileep Kumar**
 
 That is why the issues labelled `needs-bench-test` and `hardware` are still
 open. They cannot be closed from a keyboard. The software half of each is
-finished and ships disabled — what remains is wiring, measuring and flashing,
+finished and ships disabled: what remains is wiring, measuring and flashing,
 and only someone holding the device can do it.
 
 Anyone who carries the work forward from there is doing their own work on it
@@ -140,7 +140,7 @@ The original prototype firmware is **B Dileep Kumar's** work
 ([@Dileep195](https://github.com/Dileep195)) and is preserved unchanged in
 `original/`. The maintained firmware is derived from it. StrideMate was also an
 M.Tech project at **IIT Hyderabad**, and institutional policy may apply to some
-of this material. `NOTICE.md` records what is still unresolved about that —
+of this material. `NOTICE.md` records what is still unresolved about that:
 read it before assuming you can use this commercially.
 
 The licence is **PolyForm Noncommercial 1.0.0**. Personal, research,

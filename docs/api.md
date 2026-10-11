@@ -2,7 +2,7 @@
 
 Port 80, plain HTTP. **Reads are `GET`; anything that changes state is `POST`** and is additionally rejected if the browser sends an `Origin` header that is not this device.
 
-Why: HTTP Basic auth alone does not protect a state change. Once a phone has authenticated to the board, any other page open in that browser could have fired `<img src="http://10.210.60.121/motor?on=1">` and the browser would have attached the cached credentials. CORS does not help — it hides the response, but the request still executes. Clients that send no `Origin` header (curl, scripts) are unaffected.
+Why: HTTP Basic auth alone does not protect a state change. Once a phone has authenticated to the board, any other page open in that browser could have fired `<img src="http://10.210.60.121/motor?on=1">` and the browser would have attached the cached credentials. CORS does not help: it hides the response, but the request still executes. Clients that send no `Origin` header (curl, scripts) are unaffected.
 
 ## Right leg: `10.210.60.121`
 
@@ -44,7 +44,7 @@ The original firmware's key names are unchanged, so older tools keep working. Ad
 | `tofOk` | The sensor is alive and ranging |
 | `tofTarget` | The sensor is actually seeing something. **Assist requires both.** A live sensor with no target used to be shown as healthy |
 | `thermal` / `leftThermal` | Motor heat estimate, 0–1. Assist folds back above 0.80 |
-| `thermalPeak` | Highest load seen since boot — the number to read when calibrating the thermal constants |
+| `thermalPeak` | Highest load seen since boot: the number to read when calibrating the thermal constants |
 | `stall` | A stall was detected and the motor is latched off. Always `false` unless `CURRENT_SENSE_ENABLED` |
 | `packPercent` | Motor-pack charge, or `-1` when `PACK_MONITOR_ENABLED` is off |
 | `currentA` | Measured motor current, `0` unless `CURRENT_SENSE_ENABLED` |
@@ -71,4 +71,4 @@ Example `/data` response:
 
 > **Security note:** this is a local-network prototype. Passwords travel unencrypted over HTTP, and `LINK_KEY` travels in the query string of every `/set`, so it will appear in any intermediate log. Use a private hotspot with a strong Wi-Fi password, and do not expose these boards to the internet.
 
-> **If you proxy the dashboard** (a tunnel, a reverse proxy, anything that changes the hostname the browser sees), the `Origin` check will reject the control endpoints, because the origin no longer matches the board's own IP. Relax `sameOrigin()` deliberately in that case — do not disable it by accident.
+> **If you proxy the dashboard** (a tunnel, a reverse proxy, anything that changes the hostname the browser sees), the `Origin` check will reject the control endpoints, because the origin no longer matches the board's own IP. Relax `sameOrigin()` deliberately in that case, do not disable it by accident.

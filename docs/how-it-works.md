@@ -53,11 +53,11 @@ If the direction flips while the motor is running, the output drops to 0 for one
 
 Bold values are past the clamp, where the velocity term stops contributing anything.
 
-**Pinning the timing budget fixed most of this.** At 33 ms, 17 mm/sample works out to about **515 mm/s** — a brisk leg speed, not a shuffle. At the library default the saturation point sat far lower, which is what made the device effectively bang-bang. So the important fix was pinning the budget, not the curve itself.
+**Pinning the timing budget fixed most of this.** At 33 ms, 17 mm/sample works out to about **515 mm/s**: a brisk leg speed, not a shuffle. At the library default the saturation point sat far lower, which is what made the device effectively bang-bang. So the important fix was pinning the budget, not the curve itself.
 
 What remains is a matter of shape and of principle:
 
-- The curve is **convex** — slow at low speed, then steep — rather than proportional.
+- The curve is **convex**: slow at low speed, then steep, rather than proportional.
 - Its behaviour still **depends on the sample period**. Change `TOF_TIMING_BUDGET_MS` and the tuning moves with it, silently.
 
 `ASSIST_CURVE_MODE` in `config.h` offers both:
@@ -69,7 +69,7 @@ What remains is a matter of shape and of principle:
 
 Mode 1 measures the real interval between valid samples, so the tuning holds whatever the sensor is doing, and the response is linear across the range.
 
-**Mode 1 is the default as of v1.3.0.** Sensitivity now means mm/s rather than mm per sample — one slider step is `SENSITIVITY_MMS_PER_STEP` (20 mm/s) — so it needs re-tuning on the bench. Set `ASSIST_CURVE_MODE` back to `0` for the original prototype's curve, exactly.
+**Mode 1 is the default as of v1.3.0.** Sensitivity now means mm/s rather than mm per sample. One slider step is `SENSITIVITY_MMS_PER_STEP` (20 mm/s), so it needs re-tuning on the bench. Set `ASSIST_CURVE_MODE` back to `0` for the original prototype's curve, exactly.
 
 ## Motor thermal budget
 
@@ -79,7 +79,7 @@ There is no current sensor and no thermistor on this build, so heating is **esti
 load += (duty² / THERMAL_FULL_DUTY_S − load / THERMAL_COOL_TAU_S) × dt
 ```
 
-with `duty` normalised to 0–1. Past `THERMAL_WARN_LOAD` (0.80) the assist ceiling folds back smoothly toward `THERMAL_MIN_ASSIST_FRAC` (25%) of its range. It folds back rather than cutting out, because losing assist abruptly mid-stride is itself a hazard — and since a smaller duty also reduces heating, the loop settles instead of oscillating.
+with `duty` normalised to 0–1. Past `THERMAL_WARN_LOAD` (0.80) the assist ceiling folds back smoothly toward `THERMAL_MIN_ASSIST_FRAC` (25%) of its range. It folds back rather than cutting out, because losing assist abruptly mid-stride is itself a hazard, and since a smaller duty also reduces heating, the loop settles instead of oscillating.
 
 The timestep is **measured**, not assumed. It previously used a fixed `CONTROL_PERIOD_MS`, but the same loop serves HTTP and OTA, so whenever it is busy the real interval is longer and the estimate read low.
 
@@ -87,7 +87,7 @@ With `CURRENT_SENSE_ENABLED` the model integrates **real I²t** instead of duty�
 
 In simulation, no realistic walking profile reaches the warn point; a motor held at full duty starts folding back after about 56 s and settles at 80% assist.
 
-**Fold-back is off by default** (`THERMAL_PROTECTION false`) because those constants are simulated, not measured. The load estimate still runs and still appears on the dashboard, so you can calibrate against real use before switching it on — see [safety.md](safety.md).
+**Fold-back is off by default** (`THERMAL_PROTECTION false`) because those constants are simulated, not measured. The load estimate still runs and still appears on the dashboard, so you can calibrate against real use before switching it on, see [safety.md](safety.md).
 
 ## Tunable parameters (`config.h`)
 
@@ -104,7 +104,7 @@ In simulation, no realistic walking profile reaches the warn point; a motor held
 | `TOF_NO_TARGET_TIMEOUT_MS` | 500 | Motor off if the sensor reports but sees no target |
 | `TOF_RESEED_AFTER_MS` | 150 | Re-seed the filter after a gap in valid readings |
 | `MAX_VELOCITY_MM` | 30 | Ceiling on one sample's velocity (sensor artefacts) |
-| `TOF_TIMING_BUDGET_MS` | 33 | Sensor sample period — **this is a control gain** |
+| `TOF_TIMING_BUDGET_MS` | 33 | Sensor sample period. **This is a control gain** |
 | `MOTOR_DIRECTION_SIGN` | 1 | Set to −1 if this leg's motor is mirrored |
 | `MOTOR_ENABLED_AT_BOOT` | false | Motor must be enabled from the dashboard |
 | `THERMAL_FULL_DUTY_S` | 40 | duty²·seconds to reach the thermal budget |

@@ -1,6 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.0] - 2026-10-07
+
+### Added
+- **`GUIDE.md`**, a plain-English map of the firmware: what each file does,
+  which file to open for common changes, and a glossary. Linked from the README.
+- **Plain-English comments in both firmware files**: a "how to read this file"
+  note at the top, a one-line summary above each function, and numbered steps
+  through the main control step. Comments only: the compiled code is unchanged.
+
+### Changed
+- Docs reworded without em dashes, for consistency across the project.
 
 ### Fixed
 - **Wireless (OTA) updates no longer reboot the board part-way through.**
