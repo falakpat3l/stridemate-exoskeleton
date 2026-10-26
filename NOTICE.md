@@ -27,7 +27,7 @@ this publication.
 |---|---|---|
 | [stridemate-exoskeleton](https://github.com/falakpat3l/stridemate-exoskeleton) | Firmware and dashboard | PolyForm Noncommercial 1.0.0 |
 | [exo-telemetry-tunnel](https://github.com/falakpat3l/exo-telemetry-tunnel) | Telemetry bridge and gait metrics | PolyForm Noncommercial 1.0.0 |
-| [Stridemate_3D_IITH](https://github.com/falakpat3l/Stridemate_3D_IITH) | Mechanical CAD and STL files | CC BY-NC-SA 4.0 |
+| [Stridemate_3D_files_IITH](https://github.com/falakpat3l/Stridemate_3D_files_IITH) | Mechanical CAD and STL files | CC BY-NC-SA 4.0 |
 
 ## Commercial use
 

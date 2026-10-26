@@ -22,7 +22,7 @@ StrideMate is a wearable lower-limb exoskeleton prototype that helps with walkin
 | **Controllers** | 2 × ESP32 (one per leg), linked over Wi-Fi |
 | **Sensing** | VL53L1X time-of-flight distance sensor + MPU6050 accelerometer/gyroscope on each leg |
 | **Actuation** | Windshield-wiper DC motors driven by BTS7960-style H-bridges |
-| **Structure** | CNC-machined aluminium thigh links, 3D-printed housings ([CAD files](https://github.com/falakpat3l/Stridemate_3D_IITH)) |
+| **Structure** | CNC-machined aluminium thigh links, 3D-printed housings ([CAD files](https://github.com/falakpat3l/Stridemate_3D_files_IITH)) |
 | **Weight / cost** | Under 4 kg · prototype about ₹15–18k (target retail about ₹40,000) |
 | **Interface** | Phone web dashboard (no app, no internet needed): live data, motor load, assist strength, sensitivity, motor enable, STOP |
 | **Updates** | Password-protected over-the-air (OTA) firmware updates |
@@ -111,7 +111,7 @@ copyright in what they write. See [NOTICE.md](NOTICE.md).
 
 ## Related
 
-- Mechanical CAD (Fusion 360 / STEP / STL): [falakpat3l/Stridemate_3D_IITH](https://github.com/falakpat3l/Stridemate_3D_IITH)
+- Mechanical CAD (Fusion 360 / STEP / STL): [falakpat3l/Stridemate_3D_files_IITH](https://github.com/falakpat3l/Stridemate_3D_files_IITH)
 
 ## Licence
 
@@ -125,5 +125,5 @@ restricts commercial use.
 > `original/` is B Dileep Kumar's work and his copyright. [NOTICE.md](NOTICE.md)
 > records what is still outstanding on that.
 
-Mechanical CAD lives in [Stridemate_3D_IITH](https://github.com/falakpat3l/Stridemate_3D_IITH)
+Mechanical CAD lives in [Stridemate_3D_files_IITH](https://github.com/falakpat3l/Stridemate_3D_files_IITH)
 under CC BY-NC-SA 4.0.
