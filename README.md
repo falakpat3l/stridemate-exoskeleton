@@ -127,3 +127,7 @@ restricts commercial use.
 
 Mechanical CAD lives in [Stridemate_3D_files_IITH](https://github.com/falakpat3l/Stridemate_3D_files_IITH)
 under CC BY-NC-SA 4.0.
+
+## How this was built
+
+I specified what this should do, tested it and released it. AI coding assistants wrote most of the code.
